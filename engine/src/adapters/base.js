@@ -4,6 +4,7 @@
 //   { type: 'command_start', id, cmd } / { type: 'command_end', id, ok }
 //   { type: 'limit', reason, retryAt? }   usage/rate limit: router should hand off
 //   { type: 'error', message }            other failure
+//   { type: 'session', id }               provider-side session id, so the next turn can resume it
 //   { type: 'done' }
 // Adapter shape:
 //   { id, name, billing: 'subscription'|'paid'|'free', status(): Promise<{available, reason?}>,

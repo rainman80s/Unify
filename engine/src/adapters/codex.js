@@ -5,6 +5,7 @@ import { spawnJsonLines, cliInstalled, looksLikeLimit } from './base.js';
 export function parseCodexLine(msg) {
   const item = msg.item ?? {};
   switch (msg.type) {
+    case 'thread.started': return msg.thread_id ? [{ type: 'session', id: msg.thread_id }] : [];
     case 'item.started':
       if (item.type === 'command_execution') return [{ type: 'command_start', id: item.id, cmd: item.command }];
       return [];
@@ -29,8 +30,10 @@ export function codexAdapter({ bin = 'codex', sandbox = 'workspace-write' } = {}
     async status() {
       return (await cliInstalled(bin)) ? { available: true } : { available: false, reason: 'Codex CLI not installed' };
     },
-    async *run({ prompt, cwd, signal }) {
-      const args = ['exec', '--json', '--sandbox', sandbox, ...(cwd ? ['--cd', cwd] : []), prompt];
+    async *run({ prompt, cwd, signal, sessionId }) {
+      const base = ['--json', '--sandbox', sandbox, ...(cwd ? ['--cd', cwd] : [])];
+      // Verify `exec resume` flags against the installed Codex version.
+      const args = sessionId ? ['exec', 'resume', ...base, sessionId, prompt] : ['exec', ...base, prompt];
       for await (const item of spawnJsonLines(bin, args, { cwd, signal })) {
         if (item.json) yield* parseCodexLine(item.json);
         else if (item.exit && item.exit.code !== 0) {

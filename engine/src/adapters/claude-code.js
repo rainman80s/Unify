@@ -5,6 +5,7 @@ import { spawnJsonLines, cliInstalled, looksLikeLimit } from './base.js';
 
 export function parseClaudeLine(msg) {
   const out = [];
+  if (msg.type === 'system' && msg.subtype === 'init' && msg.session_id) out.push({ type: 'session', id: msg.session_id });
   if (msg.type === 'assistant') {
     for (const b of msg.message?.content ?? []) {
       if (b.type === 'text') out.push({ type: 'text', text: b.text });
@@ -19,7 +20,7 @@ export function parseClaudeLine(msg) {
   } else if (msg.type === 'result') {
     const text = String(msg.result ?? msg.error ?? msg.subtype ?? '');
     if (msg.is_error || msg.subtype?.startsWith('error')) out.push(looksLikeLimit(text) ? { type: 'limit', reason: text } : { type: 'error', message: text });
-    else out.push({ type: 'done', sessionId: msg.session_id });
+    else out.push({ type: 'done' });
   } else if (msg.type === 'rate_limit_event' || (msg.type === 'system' && looksLikeLimit(msg.message ?? ''))) {
     if (msg.rate_limit_info?.status !== 'allowed') out.push({ type: 'limit', reason: msg.message ?? 'rate limited', retryAt: msg.rate_limit_info?.resetsAt });
   }
@@ -32,8 +33,8 @@ export function claudeCodeAdapter({ bin = 'claude', permissionMode = 'acceptEdit
     async status() {
       return (await cliInstalled(bin)) ? { available: true } : { available: false, reason: 'Claude Code CLI not installed' };
     },
-    async *run({ prompt, cwd, signal }) {
-      const args = ['-p', prompt, '--output-format', 'stream-json', '--verbose', '--permission-mode', permissionMode];
+    async *run({ prompt, cwd, signal, sessionId }) {
+      const args = ['-p', prompt, '--output-format', 'stream-json', '--verbose', '--permission-mode', permissionMode, ...(sessionId ? ['--resume', sessionId] : [])];
       for await (const item of spawnJsonLines(bin, args, { cwd, signal })) {
         if (item.json) yield* parseClaudeLine(item.json);
         else if (item.exit && item.exit.code !== 0) {

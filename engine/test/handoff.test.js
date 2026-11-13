@@ -87,3 +87,22 @@ test('Codex --json parsing', () => {
   assert.deepEqual(parseCodexLine({ type: 'item.completed', item: { type: 'file_change', changes: [{ path: 'b.js' }] } }), [{ type: 'file_edit', path: 'b.js' }]);
   assert.equal(parseCodexLine({ type: 'turn.failed', error: { message: "You've hit your usage limit" } })[0].type, 'limit');
 });
+
+test('same provider resumes its session; switching provider sends the packet', async () => {
+  const claude = fakeAdapter({ id: 'claude-code', name: 'Claude Code', script: [{ type: 'session', id: 's-123' }, { type: 'text', text: 'ok' }, { type: 'done' }] });
+  const runs = [];
+  const origRun = claude.run;
+  claude.run = function (o) { runs.push(o.sessionId); return origRun.call(this, o); };
+  const codex = fakeAdapter({ id: 'codex', name: 'Codex', script: [{ type: 'done' }] });
+  const { router } = setup([claude, codex], ['claude-code', 'codex']);
+  await router.send('p1', 'first');
+  await router.send('p1', 'second');
+  assert.deepEqual(runs, [undefined, 's-123']);
+  assert.equal(claude.prompts[1], 'second');
+  router.pause('claude-code');
+  const r = await router.send('p1', 'third');
+  assert.equal(r.provider, 'codex');
+  assert.match(codex.prompts[0], /Unify\.js handoff[\s\S]*third/);
+  const st = await router.statuses('p1');
+  assert.equal(st[0].available, false);
+});

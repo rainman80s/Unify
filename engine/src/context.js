@@ -14,6 +14,8 @@ export function emptyState(project) {
     interrupted: [],    // side-effecting actions that started but never confirmed completion
     lastError: null,
     providersUsed: [],
+    lastProvider: null, // who ran the most recent turn
+    sessions: {},       // providerId -> provider-side session id, for resuming
   };
 }
 
@@ -26,7 +28,7 @@ export function applyEvent(state, ev) {
   if (ev.provider) uniqPush(s.providersUsed, ev.provider);
   switch (ev.type) {
     case 'user_message': s.lastUserRequest = d.text; break;
-    case 'turn_start': s.inFlight = { provider: ev.provider, turnId: ev.turn_id, step: 'starting' }; s.lastAssistantText = ''; break;
+    case 'turn_start': s.lastProvider = ev.provider; s.inFlight = { provider: ev.provider, turnId: ev.turn_id, step: 'starting' }; s.lastAssistantText = ''; break;
     case 'text': s.lastAssistantText = (s.lastAssistantText + d.text).slice(-MAX_TEXT); if (s.inFlight) s.inFlight.step = 'writing a response'; break;
     case 'file_edit': uniqPush(s.filesTouched, d.path); if (s.inFlight) s.inFlight.step = `editing ${d.path}`; break;
     case 'command_start':
@@ -39,6 +41,7 @@ export function applyEvent(state, ev) {
       if (t) Object.assign(t, d); else s.tasks.push({ status: 'open', ...d });
       break;
     }
+    case 'session': s.sessions[ev.provider] = d.id; break;
     case 'goal': s.goal = d.text; break;
     case 'error': s.lastError = { provider: ev.provider, message: d.message }; break;
     case 'turn_end':

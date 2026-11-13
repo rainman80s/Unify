@@ -1,0 +1,343 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Unify.js</title>
+<style>
+:root{
+  --bg:#ececf1; --bg-glow1:#d9d4f1; --bg-glow2:#ded9ec;
+  --shell:#ffffffb8; --side:#f4f3f7b8; --main:#fffdfecc; --rail:#fbfafdd9;
+  --ink:#171822; --muted:#85858f; --faint:#a9a8b2; --line:#e8e7eb; --card:#fff; --soft:#f5f5f7;
+  --accent:#6e5de7; --accent-soft:#f2efff; --accent-ink:#6555cb;
+  --ok:#3fae7a; --warn:#d9893b; --bad:#d65b5b;
+  --handoff-bg:linear-gradient(110deg,#f8f6ff,#fcfbff); --handoff-line:#e4defa; --codex-bg:#e4f3ec; --codex-ink:#208866;
+  color-scheme:light;
+}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){
+  --bg:#18181d; --bg-glow1:#2a2540; --bg-glow2:#221f30;
+  --shell:#24232bdd; --side:#27262fcc; --main:#24232b; --rail:#292830;
+  --ink:#f0eff6; --muted:#a09faa; --faint:#7d7c88; --line:#3a3944; --card:#2e2d37; --soft:#33323c;
+  --accent:#8f80f5; --accent-soft:#363046; --accent-ink:#b9afff;
+  --handoff-bg:linear-gradient(110deg,#342e47,#2d2a3a); --handoff-line:#4b4260; --codex-bg:#21392f; --codex-ink:#6fd3a7; color-scheme:dark;
+}}
+:root[data-theme="dark"]{
+  --bg:#18181d; --bg-glow1:#2a2540; --bg-glow2:#221f30;
+  --shell:#24232bdd; --side:#27262fcc; --main:#24232b; --rail:#292830;
+  --ink:#f0eff6; --muted:#a09faa; --faint:#7d7c88; --line:#3a3944; --card:#2e2d37; --soft:#33323c;
+  --accent:#8f80f5; --accent-soft:#363046; --accent-ink:#b9afff;
+  --handoff-bg:linear-gradient(110deg,#342e47,#2d2a3a); --handoff-line:#4b4260; --codex-bg:#21392f; --codex-ink:#6fd3a7; color-scheme:dark;
+}
+*{box-sizing:border-box}
+html,body{height:100%}
+body{margin:0;font-family:Inter,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;color:var(--ink);
+  background:radial-gradient(circle at 14% 4%,var(--bg-glow1) 0,transparent 35%),radial-gradient(circle at 95% 95%,var(--bg-glow2) 0,transparent 35%),var(--bg);
+  padding:20px}
+button,textarea,input{font:inherit;color:inherit}
+button{cursor:pointer}
+:focus-visible{outline:3px solid #b1a8ff;outline-offset:2px}
+.app{max-width:1500px;margin:auto;height:calc(100vh - 40px);height:calc(100dvh - 40px);grid-template-rows:minmax(0,1fr);display:grid;grid-template-columns:220px minmax(0,1fr) 320px;
+  border:1px solid color-mix(in srgb,#fff 60%,transparent);border-radius:20px;overflow:hidden;background:var(--shell);
+  box-shadow:0 30px 80px #33314622;backdrop-filter:blur(30px)}
+/* sidebar */
+.side{background:var(--side);border-right:1px solid var(--line);padding:20px 14px;display:flex;flex-direction:column;gap:4px}
+.brand{display:flex;align-items:center;gap:10px;font-weight:750;letter-spacing:-.6px;font-size:20px;padding:4px 8px 22px}
+.logo{display:grid;place-items:center;width:30px;height:30px;color:#fff;background:linear-gradient(135deg,#a799ff,#5c4bd5);border-radius:10px;font-size:16px}
+.brand small{color:var(--faint);font-weight:500}
+.navitem{border:0;background:transparent;border-radius:9px;text-align:left;padding:10px 12px;display:flex;gap:10px;align-items:center;font-size:13px;color:var(--muted)}
+.navitem.active{background:var(--card);color:var(--ink);font-weight:650;box-shadow:0 2px 8px #41414a0b}
+.sidelabel{font-size:10px;letter-spacing:1px;font-weight:750;color:var(--faint);margin:22px 12px 8px}
+.proj{display:flex;gap:10px;align-items:center;padding:8px 12px;font-size:12px}
+.dot{width:7px;height:7px;border-radius:50%;background:var(--accent);flex:none}
+.side .foot{margin-top:auto;font-size:11px;color:var(--faint);padding:12px 8px 0;border-top:1px solid var(--line);line-height:1.5}
+/* main */
+.main{display:flex;flex-direction:column;min-width:0;min-height:0;background:var(--main)}
+.top{height:64px;flex:none;border-bottom:1px solid var(--line);display:flex;align-items:center;justify-content:space-between;padding:0 24px;gap:10px}
+.crumb{font-size:12px;color:var(--faint);min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.crumb b{color:var(--ink)}
+.actions{display:flex;gap:8px;align-items:center}
+.pill,.iconbtn{background:var(--card);border:1px solid var(--line);border-radius:9px;padding:7px 10px;font-size:11px;color:var(--muted);white-space:nowrap}
+.statusdot{display:inline-block;width:7px;height:7px;border-radius:50%;background:var(--ok);margin-right:6px;vertical-align:1px}
+.statusdot.busy{background:var(--warn);animation:pulse 1s infinite}
+@keyframes pulse{50%{opacity:.35}}
+.railbtn{display:none}
+.scroll{flex:1;min-height:0;overflow:auto;padding:0 24px}
+.thread{max-width:760px;margin:0 auto;padding:28px 0 8px}
+.empty{text-align:center;padding:50px 0 20px}
+.orb{width:46px;height:46px;border-radius:15px;margin:0 auto 14px;background:linear-gradient(145deg,#a99dff,#6656d9);color:#fff;display:grid;place-items:center;font-size:23px;box-shadow:0 9px 22px #7666dc40}
+.empty h1{font-size:25px;letter-spacing:-.8px;margin:8px 0}
+.empty p{color:var(--muted);font-size:13px;margin:0 auto;max-width:440px;line-height:1.6}
+.msg{display:flex;gap:12px;margin-bottom:22px;font-size:13.5px;line-height:1.65}
+.av{width:30px;height:30px;flex:none;border-radius:10px;display:grid;place-items:center;font-weight:700;font-size:13px;background:var(--accent-soft);color:var(--accent-ink)}
+.av.user{background:var(--soft);color:var(--muted)}
+.av.codex{background:var(--codex-bg);color:var(--codex-ink)}
+.body{flex:1;min-width:0}
+.who{font-weight:700;font-size:12px;margin-bottom:4px}
+.who span{font-weight:400;color:var(--faint);margin-left:6px}
+.text{white-space:pre-wrap;word-wrap:break-word}
+.chips{display:flex;flex-wrap:wrap;gap:6px;margin-top:8px}
+.chip{font:11px ui-monospace,SFMono-Regular,Menlo,monospace;background:var(--soft);border:1px solid var(--line);border-radius:7px;padding:3px 7px;color:var(--muted)}
+.chip.open{border-color:var(--warn);color:var(--warn)}
+.note{border:1px solid var(--handoff-line);background:var(--handoff-bg);padding:12px 14px;border-radius:12px;margin:4px 0 22px 42px;font-size:12px;color:var(--muted);line-height:1.55}
+.note strong{color:var(--accent-ink)}
+.note.bad{border-color:color-mix(in srgb,var(--bad) 40%,transparent);background:color-mix(in srgb,var(--bad) 8%,var(--card))}
+.note.bad strong{color:var(--bad)}
+.note button{margin-top:8px}
+.typing::after{content:"▍";color:var(--accent);animation:pulse 1s infinite}
+.composerwrap{padding:0 24px 14px;flex:none}
+.composer{max-width:760px;margin:12px auto 6px;border:1px solid var(--line);border-radius:15px;background:var(--card);box-shadow:0 8px 25px #2420390b;padding:12px}
+.composer textarea{width:100%;resize:none;border:0;outline:0;min-height:44px;max-height:200px;background:transparent;font-size:14px}
+.cfoot{display:flex;justify-content:space-between;align-items:center;gap:8px}
+.cleft{display:flex;gap:6px;align-items:center;flex-wrap:wrap;font-size:11px;color:var(--muted)}
+.mini{border:0;background:var(--soft);border-radius:8px;padding:6px 9px;font-size:11px;color:var(--muted)}
+.send{border:0;border-radius:9px;color:#fff;background:var(--accent);width:34px;height:34px;font-size:16px;flex:none}
+.send:disabled{opacity:.4;cursor:default}
+.hint{text-align:center;color:var(--faint);font-size:10.5px;margin:0}
+/* rail */
+.rail{border-left:1px solid var(--line);background:var(--rail);padding:22px 18px;overflow:auto}
+.rail h3{font-size:13px;margin:0 0 4px}
+.sub{color:var(--faint);font-size:11px;line-height:1.5;margin:0 0 16px}
+.sec{display:flex;justify-content:space-between;align-items:center;font-size:11px;font-weight:700;margin:22px 0 10px}
+.link{color:var(--accent-ink);background:none;border:0;font-size:11px;padding:0}
+.card{border:1px solid var(--line);border-radius:12px;background:var(--card);padding:12px 14px}
+.prov{display:flex;align-items:center;gap:10px;padding:8px 0;border-bottom:1px solid var(--line)}
+.prov:last-child{border-bottom:0}
+.pinfo{flex:1;min-width:0;font-size:12px;font-weight:650}
+.pinfo small{display:block;color:var(--faint);font-weight:400;font-size:10.5px;margin-top:2px}
+.pinfo small i{display:inline-block;width:6px;height:6px;border-radius:50%;background:var(--ok);margin-right:5px}
+.pinfo small i.off{background:var(--warn)}
+.pbtns{display:flex;gap:4px}
+.sbtn{border:1px solid var(--line);background:var(--soft);border-radius:7px;padding:4px 7px;font-size:10.5px;color:var(--muted)}
+.sbtn:disabled{opacity:.35;cursor:default}
+.primary{border:0;background:var(--accent);color:#fff;border-radius:9px;padding:9px 12px;font-size:12px;font-weight:600;width:100%}
+.ghost{border:1px solid var(--line);background:var(--card);border-radius:9px;padding:8px 12px;font-size:12px;width:100%;color:var(--ink)}
+.kv{font-size:11.5px;line-height:1.5;padding:7px 0;border-bottom:1px solid var(--line)}
+.kv:last-child{border-bottom:0}
+.kv b{display:block;font-size:10px;letter-spacing:.6px;text-transform:uppercase;color:var(--faint);margin-bottom:2px}
+.kv ul{margin:0;padding-left:16px}
+.addrow{display:flex;gap:6px;margin-top:8px}
+.addrow input{flex:1;min-width:0;border:1px solid var(--line);background:var(--soft);border-radius:8px;padding:6px 8px;font-size:11.5px}
+.demo{border:1px dashed var(--accent);border-radius:12px;padding:12px;font-size:11.5px;color:var(--muted);line-height:1.5;margin-top:22px}
+.demo b{color:var(--accent-ink)}
+.stack{display:grid;gap:8px;margin-top:10px}
+/* modal */
+dialog{border:1px solid var(--line);border-radius:16px;background:var(--card);color:var(--ink);padding:0;width:min(760px,calc(100vw - 32px));max-height:85vh}
+dialog::backdrop{background:#0006;backdrop-filter:blur(3px)}
+.dhead{display:flex;justify-content:space-between;align-items:center;padding:14px 18px;border-bottom:1px solid var(--line);font-weight:700;font-size:13px}
+dialog pre{margin:0;padding:16px 18px;overflow:auto;max-height:70vh;font:12px/1.55 ui-monospace,SFMono-Regular,Menlo,monospace;white-space:pre-wrap}
+@media (max-width:1100px){.app{grid-template-columns:200px minmax(0,1fr)}.rail{display:none}.railbtn{display:inline-block}
+  .app.railopen .rail{display:block;background:var(--card);position:fixed;inset:0 0 0 auto;width:min(340px,92vw);z-index:5;box-shadow:-20px 0 60px #0003}}
+@media (max-width:680px){body{padding:0}.app{height:100dvh;border:0;border-radius:0;grid-template-columns:1fr}.side{display:none}
+  .top{padding:0 16px}.scroll,.composerwrap{padding-left:16px;padding-right:16px}.note{margin-left:0}.pill.ctx{display:none}}
+</style>
+</head>
+<body>
+<div class="app" id="app">
+  <aside class="side">
+    <div class="brand"><div class="logo">✳</div>unify<small>.js</small></div>
+    <button class="navitem active">▧ &nbsp;Workspace</button>
+    <button class="navitem" data-open="packet">◉ &nbsp;Handoff packet</button>
+    <div class="sidelabel">PROJECT</div>
+    <div class="proj"><span class="dot"></span><span id="projname">…</span></div>
+    <div class="foot" id="modefoot"></div>
+  </aside>
+
+  <main class="main">
+    <header class="top">
+      <div class="crumb">Workspace / <b id="crumb">…</b></div>
+      <div class="actions">
+        <span class="pill ctx" id="ctxpill"><i class="statusdot"></i>Context saved</span>
+        <button class="iconbtn railbtn" id="railbtn" aria-label="Show AI panel">AIs ⇄</button>
+        <button class="iconbtn" id="theme" aria-label="Toggle appearance">☾ / ☀</button>
+      </div>
+    </header>
+    <div class="scroll" id="scroll"><div class="thread" id="thread"></div></div>
+    <div class="composerwrap">
+      <form class="composer" id="form">
+        <textarea id="input" rows="2" placeholder="Ask anything, or keep building…" aria-label="Message"></textarea>
+        <div class="cfoot">
+          <div class="cleft" id="nextup"></div>
+          <button class="send" id="send" aria-label="Send">↑</button>
+        </div>
+      </form>
+      <p class="hint" id="hint"></p>
+    </div>
+  </main>
+
+  <aside class="rail" id="rail">
+    <div style="display:flex;justify-content:space-between;align-items:center"><h3>Your AIs</h3><button class="sbtn railbtn" id="railclose">Done</button></div>
+    <p class="sub">Work goes to the first available AI. When one runs out, the next picks up with the saved context.</p>
+    <div class="card" id="provs"></div>
+    <div class="stack"><button class="ghost" id="handoffnow">⇄ &nbsp;Hand off now</button></div>
+
+    <div class="sec"><span>Context checkpoint</span><button class="link" data-open="packet">VIEW PACKET ↗</button></div>
+    <div class="card" id="ctx"></div>
+
+    <div class="demo" id="demobox" hidden>
+      <b>Demo mode.</b> Claude Code and Codex are simulated here. Nothing is sent to an AI and no accounts are connected.
+      <div class="stack"><button class="primary" id="simlimit">Make the next reply hit a limit</button></div>
+    </div>
+  </aside>
+</div>
+
+<dialog id="packet">
+  <div class="dhead"><span id="ptitle">Handoff packet</span><button class="sbtn" id="pclose">Close</button></div>
+  <pre id="ptext"></pre>
+</dialog>
+
+<script>
+const $ = s => document.querySelector(s);
+const el = (tag, cls, text) => { const e = document.createElement(tag); if (cls) e.className = cls; if (text != null) e.textContent = text; return e; };
+let S = null; // latest snapshot
+
+// theme: system by default, toggle overrides
+try { const t = localStorage.getItem('unify-theme'); if (t) document.documentElement.dataset.theme = t; } catch {}
+$('#theme').onclick = () => {
+  const dark = matchMedia('(prefers-color-scheme: dark)').matches;
+  const cur = document.documentElement.dataset.theme || (dark ? 'dark' : 'light');
+  const next = cur === 'dark' ? 'light' : 'dark';
+  document.documentElement.dataset.theme = next;
+  try { localStorage.setItem('unify-theme', next); } catch {}
+};
+$('#railbtn').onclick = () => $('#app').classList.toggle('railopen');
+$('#railclose').onclick = () => $('#app').classList.remove('railopen');
+
+const post = (path, body = {}) => fetch(path, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) }).then(r => r.json());
+const nameOf = id => S?.statuses.find(s => s.id === id)?.name ?? id;
+const avClass = id => id === 'codex' ? 'av codex' : 'av';
+const avChar = id => id === 'codex' ? '◎' : '✳';
+const time = iso => new Date(iso).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+
+function renderThread() {
+  const t = $('#thread'); t.textContent = '';
+  const evs = S.events;
+  if (!evs.some(e => e.type === 'user_message')) {
+    const e = el('div', 'empty');
+    e.append(el('div', 'orb', '✳'), el('h1', null, S.project.name));
+    e.append(el('p', null, S.mode === 'demo'
+      ? 'Send a message to the simulated Claude Code. Then tap “Make the next reply hit a limit” and watch Codex pick up the work.'
+      : 'Messages go to your own Claude Code and Codex, in priority order. Context is saved after every step.'));
+    t.append(e);
+  }
+  let turn = null;
+  for (const ev of evs) {
+    const d = ev.data;
+    switch (ev.type) {
+      case 'user_message': {
+        const m = el('div', 'msg'); m.append(el('div', 'av user', 'Y'));
+        const b = el('div', 'body'); const w = el('div', 'who', 'You'); w.append(el('span', null, time(ev.at)));
+        b.append(w, el('div', 'text', d.text)); m.append(b); t.append(m); break;
+      }
+      case 'turn_start': {
+        const m = el('div', 'msg'); m.append(el('div', avClass(ev.provider), avChar(ev.provider)));
+        const b = el('div', 'body'); const w = el('div', 'who', nameOf(ev.provider)); w.append(el('span', null, time(ev.at)));
+        const text = el('div', 'text'); const chips = el('div', 'chips');
+        b.append(w, text, chips); m.append(b); t.append(m);
+        turn = { text, chips, cmds: {} }; break;
+      }
+      case 'text': if (turn) turn.text.textContent += d.text; break;
+      case 'file_edit': turn?.chips.append(el('span', 'chip', '✎ ' + d.path)); break;
+      case 'command_start': if (turn) { const c = el('span', 'chip open', '$ ' + d.cmd); turn.cmds[d.id] = c; turn.chips.append(c); } break;
+      case 'command_end': turn?.cmds[d.id]?.classList.remove('open'); break;
+      case 'decision': { const n = el('div', 'note'); n.append(el('strong', null, '✓ Decision recorded'), el('br'), d.text); t.append(n); break; }
+      case 'turn_interrupted': {
+        const n = el('div', 'note bad'); n.append(el('strong', null, `■ ${nameOf(ev.provider)} stopped`), el('br'), d.reason);
+        t.append(n); turn = null; break;
+      }
+      case 'handoff': {
+        const n = el('div', 'note');
+        n.append(el('strong', null, `✧ Handoff: ${nameOf(d.from)} → ${nameOf(d.to)}`), el('br'),
+          `${nameOf(d.to)} received the saved checkpoint (goal, decisions, files, where work stopped). ${nameOf(d.from)} wasn't asked to summarize.`, el('br'));
+        const b = el('button', 'sbtn', 'See what was sent'); b.onclick = () => showPacket(d.packet); n.append(b);
+        t.append(n); break;
+      }
+      case 'error': { const n = el('div', 'note bad'); n.append(el('strong', null, '⚠ Problem'), el('br'), d.message); t.append(n); break; }
+      case 'skipped': { const n = el('div', 'note'); n.append(el('strong', null, `Skipped ${nameOf(ev.provider)}`), el('br'), d.reason); t.append(n); break; }
+      case 'turn_end': turn = null; break;
+    }
+  }
+  if (S.busy && turn) turn.text.classList.add('typing');
+}
+
+function renderRail() {
+  const box = $('#provs'); box.textContent = '';
+  S.statuses.forEach((p, i) => {
+    const row = el('div', 'prov');
+    row.append(el('div', avClass(p.id), avChar(p.id)));
+    const info = el('div', 'pinfo', `${i + 1}. ${p.name}`);
+    const sm = el('small'); const dot = el('i', p.available ? '' : 'off'); sm.append(dot,
+      p.available ? (p.billing === 'paid' ? 'Ready · paid, asks first' : 'Ready · your subscription') :
+      (p.until ? `Resting until ${new Date(p.until).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}` : p.reason));
+    info.append(sm); row.append(info);
+    const btns = el('div', 'pbtns');
+    const up = el('button', 'sbtn', '↑'); up.disabled = i === 0; up.ariaLabel = `Move ${p.name} up`;
+    up.onclick = () => { const o = S.statuses.map(s => s.id); [o[i - 1], o[i]] = [o[i], o[i - 1]]; post('/api/priorities', { order: o }); };
+    const pz = el('button', 'sbtn', p.available ? 'Pause' : 'Resume');
+    pz.onclick = () => post(p.available ? '/api/pause' : '/api/resume', { id: p.id });
+    btns.append(up, pz); row.append(btns); box.append(row);
+  });
+
+  const st = S.state, c = $('#ctx'); c.textContent = '';
+  const kv = (k, v) => { const r = el('div', 'kv'); r.append(el('b', null, k)); if (typeof v === 'string') r.append(v); else r.append(v); c.append(r); return r; };
+  const ul = (xs, empty) => { if (!xs.length) return empty; const u = el('ul'); xs.slice(-5).forEach(x => u.append(el('li', null, x))); return u; };
+  const goalRow = kv('Goal', st.goal || 'Not set yet');
+  const gi = el('div', 'addrow'); const ginput = el('input'); ginput.placeholder = st.goal ? 'Change the goal…' : 'Set the goal…';
+  const gb = el('button', 'sbtn', 'Save'); gb.onclick = () => post('/api/project', { goal: ginput.value }); gi.append(ginput, gb); goalRow.append(gi);
+  const decRow = kv('Decisions', ul(st.decisions.map(d => d.text), 'None yet'));
+  const di = el('div', 'addrow'); const dinput = el('input'); dinput.placeholder = 'Add a decision…';
+  const db = el('button', 'sbtn', 'Add'); db.onclick = () => dinput.value.trim() && post('/api/decision', { text: dinput.value.trim() }); di.append(dinput, db); decRow.append(di);
+  kv('Files touched', ul(st.filesTouched, 'None yet'));
+  kv('Where work is', st.inFlight ? `${nameOf(st.inFlight.provider)} was ${st.inFlight.step}${st.inFlight.interruptedBecause ? ' (stopped)' : ''}` : (st.lastProvider ? `Last turn by ${nameOf(st.lastProvider)} finished` : 'Nothing yet'));
+  if (st.interrupted.length) kv('Interrupted, will not auto-rerun', ul(st.interrupted.map(x => x.cmd), ''));
+
+  const next = S.statuses.find(s => s.available);
+  $('#nextup').textContent = '';
+  $('#nextup').append(el('span', 'mini', next ? `→ ${next.name}` : 'No AI available'));
+  if (next && st.lastProvider && next.id !== st.lastProvider) $('#nextup').append(el('span', null, `with handoff from ${nameOf(st.lastProvider)}`));
+  $('#handoffnow').disabled = !st.lastProvider || S.busy;
+}
+
+function render() {
+  $('#projname').textContent = S.project.name; $('#crumb').textContent = S.project.name;
+  $('#modefoot').textContent = S.mode === 'demo' ? 'Demo mode · simulated AIs' : 'Live · using your installed CLIs';
+  $('#demobox').hidden = S.mode !== 'demo';
+  $('#hint').textContent = S.mode === 'demo' ? 'Demo · replies are simulated. Context is saved after every step.' : 'Context is saved after every step, so a handoff never depends on the AI that ran out.';
+  $('#send').disabled = S.busy;
+  const pill = $('#ctxpill'); pill.firstChild.className = 'statusdot' + (S.busy ? ' busy' : ''); pill.lastChild.textContent = S.busy ? 'Working · saving context' : 'Context saved';
+  const sc = $('#scroll'); const atBottom = sc.scrollHeight - sc.scrollTop - sc.clientHeight < 80;
+  renderThread(); renderRail();
+  if (atBottom) sc.scrollTop = sc.scrollHeight;
+}
+
+function showPacket(sent) {
+  $('#ptitle').textContent = sent ? 'Exactly what was sent at handoff' : 'What the next AI would receive right now';
+  $('#ptext').textContent = sent ?? S.packet ?? S.preview;
+  $('#packet').showModal();
+}
+document.querySelectorAll('[data-open="packet"]').forEach(b => b.onclick = () => showPacket());
+$('#pclose').onclick = () => $('#packet').close();
+
+$('#form').onsubmit = async e => {
+  e.preventDefault(); const text = $('#input').value.trim(); if (!text || S?.busy) return;
+  $('#input').value = ''; await post('/api/send', { text });
+};
+$('#input').addEventListener('keydown', e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); $('#form').requestSubmit(); } });
+$('#simlimit').onclick = async () => { const next = S.statuses.find(s => s.available); await post('/api/demo/limit', { id: next?.id }); $('#simlimit').textContent = `✓ ${next?.name ?? 'Next AI'}'s next reply will hit a limit`; setTimeout(() => $('#simlimit').textContent = 'Make the next reply hit a limit', 4000); };
+$('#handoffnow').onclick = () => S.state.lastProvider && post('/api/pause', { id: S.state.lastProvider });
+
+async function load() { S = await (await fetch('/api/state')).json(); render(); }
+const es = new EventSource('/api/stream');
+let pending = false;
+es.onmessage = m => {
+  const msg = JSON.parse(m.data);
+  if (msg.kind === 'snapshot') { S = msg; render(); return; }
+  if (msg.kind === 'event' && S) {
+    S.events.push({ ...msg.event, data: msg.event.data, at: new Date().toISOString() });
+    if (!pending) { pending = true; requestAnimationFrame(() => { pending = false; render(); }); }
+    if (['handoff', 'turn_interrupted', 'decision', 'file_edit'].includes(msg.event.type)) load();
+  }
+};
+load();
+</script>
+</body>
+</html>

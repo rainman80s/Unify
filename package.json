@@ -4,9 +4,13 @@
   "private": true,
   "description": "One workspace for many AIs, with a context engine that keeps work moving across providers.",
   "type": "module",
-  "engines": { "node": ">=22.13" },
+  "engines": {
+    "node": ">=22.13"
+  },
   "scripts": {
     "test": "node --test engine/test/*.test.js",
-    "demo": "node engine/demo.js"
+    "demo": "node engine/demo.js",
+    "start": "node app/server.js",
+    "start:real": "UNIFY_MODE=real node app/server.js"
   }
 }
