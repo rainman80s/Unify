@@ -74,6 +74,26 @@ button{cursor:pointer}
 .av.paid{background:#f0e9fb;color:#8a58bf}
 .paidline{display:block;color:var(--faint);font-weight:400;font-size:10.5px;margin-top:2px}
 .paidline b{color:var(--ink);font-weight:600}
+.tagtrial{display:inline-block;font-size:9px;font-weight:700;letter-spacing:.4px;color:#1f7a5a;background:#e2f4ec;border-radius:5px;padding:1px 5px;margin-left:5px;vertical-align:1px}
+.tagsub{display:inline-block;font-size:9px;font-weight:700;letter-spacing:.4px;color:var(--accent-ink);background:var(--accent-soft);border-radius:5px;padding:1px 5px;margin-left:5px;vertical-align:1px}
+.av.nv{background:#e8f3d6;color:#4f7d12}
+.aipage{max-width:820px;margin:0 auto;padding:30px 0 40px}
+.aipage h1{font-size:25px;letter-spacing:-.8px;margin:0 0 6px}
+.aipage>p{color:var(--muted);font-size:13px;line-height:1.6;margin:0 0 20px}
+.aicard{border:1px solid var(--line);background:var(--card);border-radius:14px;padding:16px 18px;margin-bottom:12px}
+.aihead{display:flex;align-items:center;gap:10px}
+.aihead h3{font-size:14px;margin:0;flex:1}
+.aicard .line{font-size:12px;color:var(--muted);line-height:1.6;margin-top:8px}
+.aicard .line b{color:var(--ink);font-weight:600}
+.aiactions{display:flex;gap:8px;flex-wrap:wrap;margin-top:12px}
+.aiactions button{width:auto}
+.cat{margin-top:12px;border-top:1px solid var(--line);padding-top:12px}
+.cat input{width:100%;border:1px solid var(--line);background:var(--soft);border-radius:9px;padding:8px 10px;font-size:13px}
+.catlist{max-height:320px;overflow:auto;margin-top:8px;border:1px solid var(--line);border-radius:10px}
+.catrow{display:flex;align-items:center;gap:10px;padding:8px 12px;border-bottom:1px solid var(--line);font-size:12.5px}
+.catrow:last-child{border-bottom:0}
+.catrow code{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font:12px ui-monospace,Menlo,monospace}
+.catrow.cur{background:var(--accent-soft)}
 .tagpaid{display:inline-block;font-size:9px;font-weight:700;letter-spacing:.4px;color:#8a58bf;background:#f0e9fb;border-radius:5px;padding:1px 5px;margin-left:5px;vertical-align:1px}
 .dbody{padding:16px 18px;font-size:13px;line-height:1.6}
 .dbody p{margin:0 0 12px}
@@ -158,7 +178,8 @@ body.desktop:not(.mac){background:var(--bg)}
 <div class="app" id="app">
   <aside class="side">
     <div class="brand"><div class="logo">✳</div>unify<small>.js</small></div>
-    <button class="navitem active">▧ &nbsp;Workspace</button>
+    <button class="navitem active" data-view="chat">▧ &nbsp;Workspace</button>
+    <button class="navitem" data-view="ais">✳ &nbsp;My AIs</button>
     <button class="navitem" data-open="packet">◉ &nbsp;Handoff packet</button>
     <div class="sidelabel">PROJECT</div>
     <div class="proj"><span class="dot"></span><span id="projname">…</span></div>
@@ -197,7 +218,7 @@ body.desktop:not(.mac){background:var(--bg)}
     <div class="card" id="ctx"></div>
 
     <div class="demo" id="demobox" hidden>
-      <b>Demo mode.</b> Claude Code and Codex are simulated here. Nothing is sent to an AI and no accounts are connected.
+      <b>Demo mode.</b> Every AI here is simulated: Claude Code, Codex, NVIDIA, and DeepSeek. Nothing is sent to an AI and no accounts are connected.
       <div class="stack"><button class="primary" id="simlimit">Make the next reply hit a limit</button></div>
     </div>
   </aside>
@@ -254,9 +275,10 @@ $('#railclose').onclick = () => $('#app').classList.remove('railopen');
 
 const post = (path, body = {}) => fetch(path, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) }).then(r => r.json());
 const nameOf = id => S?.statuses.find(s => s.id === id)?.name ?? id;
+const tagFor = p => p.billing === 'paid' ? el('span', 'tagpaid', 'PAID') : p.billing === 'trial' ? el('span', 'tagtrial', 'FREE TRIAL') : el('span', 'tagsub', 'SUBSCRIPTION');
 const isPaid = id => S?.statuses.find(s => s.id === id)?.billing === 'paid';
-const avClass = id => id === 'codex' ? 'av codex' : isPaid(id) ? 'av paid' : 'av';
-const avChar = id => id === 'codex' ? '◎' : isPaid(id) ? '◈' : '✳';
+const avClass = id => id === 'codex' ? 'av codex' : id === 'nvidia' ? 'av nv' : isPaid(id) ? 'av paid' : 'av';
+const avChar = id => id === 'codex' ? '◎' : id === 'nvidia' ? '◉' : isPaid(id) ? '◈' : '✳';
 const usd = n => n == null ? '?' : n < 0.01 ? `$${n.toFixed(4)}` : `$${n.toFixed(2)}`;
 const time = iso => new Date(iso).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
 
@@ -323,9 +345,9 @@ function renderRail() {
     const row = el('div', 'prov');
     row.append(el('div', avClass(p.id), avChar(p.id)));
     const info = el('div', 'pinfo', `${i + 1}. ${p.name}`);
-    if (p.billing === 'paid') info.append(el('span', 'tagpaid', 'PAID'));
+    if (p.billing === 'paid' || p.billing === 'trial') info.append(tagFor(p));
     const sm = el('small'); const dot = el('i', p.available ? '' : 'off'); sm.append(dot,
-      p.available ? (p.billing === 'paid' ? (p.capUsd ? 'Approved' : 'Ready · asks before use') : 'Ready · your subscription') :
+      p.available ? (p.billing === 'paid' ? (p.capUsd ? 'Approved' : 'Ready · asks before use') : p.billing === 'trial' ? `Ready · ${p.model?.split('/').pop() ?? 'trial'}` : 'Ready · your subscription') :
       (p.until ? `Resting until ${new Date(p.until).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}` : p.reason));
     info.append(sm);
     if (p.billing === 'paid') {
@@ -343,7 +365,7 @@ function renderRail() {
     const pz = el('button', 'sbtn', p.available ? 'Pause' : 'Resume');
     pz.onclick = () => post(p.available ? '/api/pause' : '/api/resume', { id: p.id });
     btns.append(up, pz);
-    if (p.billing === 'paid' && !p.available && p.reason === 'No API key added') { const k = el('button', 'sbtn', 'Add key'); k.onclick = () => openKey(p); btns.replaceChildren(up, k); }
+    if (p.needsKey && !p.available && p.reason === 'No API key added') { const k = el('button', 'sbtn', 'Add key'); k.onclick = () => openKey(p); btns.replaceChildren(up, k); }
     row.append(btns); box.append(row);
   });
 
@@ -368,6 +390,68 @@ function renderRail() {
   $('#handoffnow').disabled = !st.lastProvider || S.busy;
 }
 
+let view = 'chat', catalog = { provider: null, models: null, error: null, q: '', loading: false };
+document.querySelectorAll('[data-view]').forEach(b => b.onclick = () => { view = b.dataset.view; $('#app').classList.remove('railopen'); render(); $('#scroll').scrollTop = 0; });
+
+async function loadCatalog(id, refresh) {
+  catalog = { ...catalog, provider: id, loading: true, error: null };
+  render();
+  const r = await (await fetch(`/api/catalog?provider=${encodeURIComponent(id)}${refresh ? '&refresh=1' : ''}`)).json();
+  catalog = { ...catalog, loading: false, models: r.models ?? null, error: r.error ?? null };
+  render();
+}
+
+function renderAIs() {
+  const t = $('#thread'); const focused = document.activeElement?.id; t.textContent = '';
+  const page = el('div', 'aipage');
+  page.append(el('h1', null, 'My AIs'), el('p', null, 'Unify.js uses these in the order on the right. Subscription AIs go first, then free trials. Paid APIs only run after you approve them.'));
+  for (const p of S.statuses) {
+    const card = el('div', 'aicard');
+    const head = el('div', 'aihead'); head.append(el('div', avClass(p.id), avChar(p.id)), el('h3', null, p.name), tagFor(p));
+    card.append(head);
+    const line = (...parts) => { const d = el('div', 'line'); d.append(...parts); card.append(d); return d; };
+    line(p.available ? '● Ready' : `○ ${p.until ? 'Resting after a limit' : p.reason}`);
+    if (p.billing === 'subscription') line(`Runs your own signed-in ${p.id === 'codex' ? 'codex' : 'claude'} command-line tool on this computer, using your plan. Unify.js never sees your login.`);
+    if (p.model) line('Model: ', el('b', null, p.model));
+    if (p.pricePerMTok) line(`Estimated price: $${p.pricePerMTok.input} / $${p.pricePerMTok.output} per million input / output tokens. Verify current pricing.`);
+    if (p.billing === 'paid') line('Spent on this project: ', el('b', null, usd(p.spend?.usd ?? 0)), p.capUsd ? ` of a ${usd(p.capUsd)} cap` : ' · asks before each new budget');
+    if (p.note) line(p.note);
+    if (p.chatOnly) line('Chat only: it can suggest changes but can\'t edit files or run commands.');
+    if (p.needsKey) line('API key: ', el('b', null, p.keySource === 'demo' ? 'simulated (demo)' : p.keySource ? `added (${p.keySource})` : 'not added'));
+    const acts = el('div', 'aiactions');
+    if (p.needsKey && !p.keySource) { const b = el('button', 'primary', 'Add API key'); b.onclick = () => openKey(p); acts.append(b); }
+    if (p.keySource === 'secure storage') { const b = el('button', 'ghost', 'Remove key'); b.onclick = () => post('/api/keys', { provider: p.id, remove: true }); acts.append(b); }
+    if (p.hasCatalog && p.keySource) {
+      const b = el('button', 'ghost', catalog.provider === p.id && catalog.models ? 'Refresh catalog' : 'Browse model catalog');
+      b.onclick = () => loadCatalog(p.id, catalog.provider === p.id && !!catalog.models); acts.append(b);
+    }
+    if (acts.childElementCount) card.append(acts);
+    if (catalog.provider === p.id) {
+      const cat = el('div', 'cat');
+      if (catalog.loading) cat.append(el('div', 'line', 'Loading the catalog…'));
+      else if (catalog.error) cat.append(el('div', 'line', `Couldn't load the catalog: ${catalog.error}`));
+      else if (catalog.models) {
+        const q = el('input'); q.id = 'catq'; q.placeholder = `Search ${catalog.models.length} models…`; q.value = catalog.q;
+        q.oninput = () => { catalog.q = q.value; render(); };
+        const list = el('div', 'catlist');
+        const shown = catalog.models.filter(m => m.id.toLowerCase().includes(catalog.q.toLowerCase()));
+        for (const m of shown.slice(0, 200)) {
+          const row = el('div', 'catrow' + (m.id === p.model ? ' cur' : '')); row.append(el('code', null, m.id));
+          if (m.id === p.model) row.append(el('span', 'tagsub', 'IN USE'));
+          else { const u = el('button', 'sbtn', 'Use'); u.onclick = () => post('/api/model', { provider: p.id, model: m.id }); row.append(u); }
+          list.append(row);
+        }
+        if (!shown.length) list.append(el('div', 'catrow', 'No models match.'));
+        cat.append(q, list, el('div', 'line', S.mode === 'demo' ? 'Demo: a small sample list. With your key, this is the live list from NVIDIA.' : 'Listed by the provider for your key. Availability, limits, and terms vary by model, and the list only covers chat models: image generation comes later.'));
+      }
+      card.append(cat);
+    }
+    page.append(card);
+  }
+  t.append(page);
+  if (focused === 'catq') { const q = $('#catq'); q?.focus(); q?.setSelectionRange(q.value.length, q.value.length); }
+}
+
 function render() {
   $('#projname').textContent = S.project.name; $('#crumb').textContent = S.project.name;
   $('#modefoot').textContent = S.mode === 'demo' ? 'Demo mode · simulated AIs' : `Live · ${S.project.cwd}`;
@@ -376,7 +460,11 @@ function render() {
   $('#send').disabled = S.busy;
   const pill = $('#ctxpill'); pill.firstChild.className = 'statusdot' + (S.busy ? ' busy' : ''); pill.lastChild.textContent = S.busy ? 'Working · saving context' : 'Context saved';
   const sc = $('#scroll'); const atBottom = sc.scrollHeight - sc.scrollTop - sc.clientHeight < 80;
-  renderThread(); renderRail(); renderApproval();
+  document.querySelectorAll('.navitem[data-view]').forEach(b => b.classList.toggle('active', b.dataset.view === view));
+  $('.composerwrap').hidden = view !== 'chat';
+  $('#crumb').textContent = view === 'ais' ? 'My AIs' : S.project.name;
+  if (view === 'ais') renderAIs(); else renderThread();
+  renderRail(); renderApproval();
   if (atBottom) sc.scrollTop = sc.scrollHeight;
 }
 
@@ -402,7 +490,7 @@ function renderApproval() {
   if (!a) { if (d.open) d.close(); shownApproval = null; return; }
   if (shownApproval === a.id) return;
   shownApproval = a.id;
-  const free = S.statuses.filter(s => s.billing !== 'paid').map(s => s.name).join(' and ');
+  const free = S.statuses.filter(s => s.billing !== 'paid').map(s => s.name).join(', ').replace(/, ([^,]*)$/, ' and $1');
   $('#atitle').textContent = `Continue with ${a.name}?`;
   $('#abody').textContent = `${free || 'Your subscription AIs'} can't continue right now. ${a.name} can pick up from the saved checkpoint, but it's billed per use to your own account${a.spentUsd ? ` (already spent ${usd(a.spentUsd)} on this project)` : ''}.`;
   $('#aprice').textContent = a.pricePerMTok ? `Estimated price for ${a.model}: $${a.pricePerMTok.input} per million input tokens, $${a.pricePerMTok.output} per million output tokens. Check the provider's current pricing.` : 'Price unknown for this model.';
@@ -431,7 +519,7 @@ es.onmessage = m => {
   if (msg.kind === 'snapshot') { S = msg; render(); return; }
   if (msg.kind === 'event' && S) {
     S.events.push({ ...msg.event, data: msg.event.data, at: new Date().toISOString() });
-    if (!pending) { pending = true; requestAnimationFrame(() => { pending = false; render(); }); }
+    if (!pending && view === 'chat') { pending = true; requestAnimationFrame(() => { pending = false; render(); }); }
     if (['handoff', 'turn_interrupted', 'decision', 'file_edit', 'git_checkpoint'].includes(msg.event.type)) load();
   }
 };

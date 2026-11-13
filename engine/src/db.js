@@ -19,6 +19,7 @@ CREATE TABLE IF NOT EXISTS checkpoints (
   id INTEGER PRIMARY KEY AUTOINCREMENT, project_id TEXT NOT NULL, upto_seq INTEGER NOT NULL,
   state TEXT NOT NULL, at TEXT NOT NULL
 );
+CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT NOT NULL);
 CREATE TABLE IF NOT EXISTS priorities (
   project_id TEXT NOT NULL, provider TEXT NOT NULL, rank INTEGER NOT NULL,
   PRIMARY KEY (project_id, provider)
@@ -65,6 +66,13 @@ export function openDb(path = ':memory:', { Database = BuiltinSqlite } = {}) {
     },
     priorities(projectId) {
       return db.prepare('SELECT provider FROM priorities WHERE project_id = ? ORDER BY rank').all(projectId).map(r => r.provider);
+    },
+    getSetting(key, fallback = null) {
+      const r = db.prepare('SELECT value FROM settings WHERE key = ?').get(key);
+      return r ? JSON.parse(r.value) : fallback;
+    },
+    setSetting(key, value) {
+      db.prepare('INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value').run(key, JSON.stringify(value));
     },
     close() { db.close(); },
   };

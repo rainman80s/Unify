@@ -34,7 +34,7 @@ function streamed(id, name, reply, cwd) {
   return a;
 }
 
-export function demoAdapters({ cwd }) {
+export function demoAdapters({ cwd, getModel = () => () => null }) {
   const claude = streamed('claude-code', 'Claude Code', (req) =>
     `On it. For "${req.slice(0, 80)}", I'll start from the project goal and the decisions so far. First I'll sketch the component structure, then wire up the main controls, keeping the volunteer workflow to as few clicks as possible. I'll note any decisions as I go so they carry over if another model takes over.`, cwd);
   const codex = streamed('codex', 'Codex', (req, handoff) =>
@@ -53,6 +53,20 @@ export function demoAdapters({ cwd }) {
       yield ev;
     }
   };
-  const all = { 'claude-code': claude, codex, deepseek };
-  return { adapters: [claude, codex, deepseek], limitNext(id) { (all[id] ?? claude).limitPending = true; } };
+  // Simulated NVIDIA catalog model: free trial, chat-only, no cost.
+  const nvidia = streamed('nvidia', 'NVIDIA', (req, handoff) =>
+    `${handoff ? 'Continuing from the saved checkpoint in chat-only mode. ' : ''}(${nvidia.model}) For "${req.slice(0, 80)}", here's a suggested approach you can hand back to Claude Code.`, cwd);
+  const nvModel = getModel('nvidia');
+  Object.assign(nvidia, { billing: 'trial', chatOnly: true, needsKey: true,
+    note: 'Simulated. Real NVIDIA trial access is rate-limited and for prototyping, not production.' });
+  Object.defineProperty(nvidia, 'model', { get: () => nvModel() || 'meta/llama-3.3-70b-instruct' });
+  // A small, illustrative sample of what the catalog lists. The real list comes from NVIDIA's /v1/models with your key.
+  nvidia.listModels = async () => ['deepseek-ai/deepseek-r1', 'google/gemma-3-27b-it', 'meta/llama-3.1-8b-instruct', 'meta/llama-3.3-70b-instruct',
+    'microsoft/phi-4-mini-instruct', 'mistralai/mistral-small-24b-instruct', 'nvidia/llama-3.3-nemotron-super-49b-v1', 'qwen/qwen2.5-coder-32b-instruct',
+    'qwen/qwq-32b'].map(id => ({ id, owner: id.split('/')[0] }));
+  const nvRun = nvidia.run;
+  nvidia.run = async function* (o) { for await (const ev of nvRun.call(this, o)) if (ev.type !== 'file_edit') yield ev; };
+  deepseek.needsKey = true;
+  const all = { 'claude-code': claude, codex, nvidia, deepseek };
+  return { adapters: [claude, codex, nvidia, deepseek], limitNext(id) { (all[id] ?? claude).limitPending = true; } };
 }

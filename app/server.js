@@ -7,7 +7,7 @@ import { readFile, mkdir } from 'node:fs/promises';
 import { join, dirname, basename } from 'node:path';
 import { createHash } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
-import { openDb, createRouter, refreshCheckpoint, renderHandoffPacket, claudeCodeAdapter, codexAdapter, deepseekAdapter, gitCheckpointer } from '../engine/src/index.js';
+import { openDb, createRouter, refreshCheckpoint, renderHandoffPacket, claudeCodeAdapter, codexAdapter, deepseekAdapter, nvidiaAdapter, gitCheckpointer } from '../engine/src/index.js';
 import { randomUUID } from 'node:crypto';
 import { createSecretStore } from './secrets.js';
 import { demoAdapters } from './demo-adapters.js';
@@ -36,12 +36,16 @@ const db = openDb(MODE === 'demo' ? ':memory:' : join(dataDir, 'unify.db'), { Da
 if (!db.getProject(PROJECT)) {
   db.createProject({ id: PROJECT, name: MODE === 'demo' ? 'Church presentation app' : basename(CWD), cwd: CWD,
     goal: MODE === 'demo' ? 'A reliable, volunteer-friendly presentation app for live church production' : '' });
-  db.setPriorities(PROJECT, ['claude-code', 'codex', 'deepseek']);
+  db.setPriorities(PROJECT, ['claude-code', 'codex', 'nvidia', 'deepseek']); // free trial before paid
 }
 
-const demo = MODE === 'demo' ? demoAdapters({ cwd: CWD }) : null;
+const getModel = id => () => db.getSetting(`${id}.model`);
+const demo = MODE === 'demo' ? demoAdapters({ cwd: CWD, getModel }) : null;
 const keys = secrets ?? createSecretStore({ file: null });
-const adapters = demo ? demo.adapters : [claudeCodeAdapter(), codexAdapter(), deepseekAdapter({ getKey: () => keys.get('deepseek') })];
+const adapters = demo ? demo.adapters : [claudeCodeAdapter(), codexAdapter(),
+  nvidiaAdapter({ getKey: () => keys.get('nvidia'), getModel: getModel('nvidia') }),
+  deepseekAdapter({ getKey: () => keys.get('deepseek') })];
+const catalogCache = new Map(); // providerId -> { at, models }
 // Projects created before a provider existed: add it at the end of the order (paid ones still need approval to run).
 { const order = db.priorities(PROJECT); const missing = adapters.map(a => a.id).filter(id => !order.includes(id)); if (missing.length) db.setPriorities(PROJECT, [...order, ...missing]); }
 const clients = new Set();
@@ -70,8 +74,9 @@ async function snapshot() {
   const packet = from && next && next.id !== state.lastProvider ? renderHandoffPacket(state, { from, to: next.name, reason: state.lastError?.message }) : null;
   for (const s of statuses) {
     const a = adapters.find(x => x.id === s.id);
-    if (a?.billing === 'paid') Object.assign(s, { capUsd: router.approvalFor(PROJECT, s.id), spend: state.spend[s.id] ?? null,
-      keySource: demo ? 'demo' : await keys.source(s.id), canStoreKey: keys.canStore, chatOnly: !!a.chatOnly });
+    if (a?.billing === 'paid') Object.assign(s, { capUsd: router.approvalFor(PROJECT, s.id), spend: state.spend[s.id] ?? null });
+    if (a?.needsKey) Object.assign(s, { needsKey: true, keySource: demo ? 'demo' : await keys.source(s.id), canStoreKey: keys.canStore,
+      chatOnly: !!a.chatOnly, model: a.model, note: a.note ?? null, pricePerMTok: a.pricePerMTok ?? null, hasCatalog: typeof a.listModels === 'function' });
   }
   const approval = pending && (({ resolve, ...p }) => p)(pending);
   return { mode: MODE, busy, approval, project: db.getProject(PROJECT), state, statuses, packet,
@@ -94,6 +99,14 @@ const server = http.createServer(async (req, res) => {
       return res.end(await readFile(join(here, 'index.html')));
     }
     if (req.method === 'GET' && url.pathname === '/api/state') return json(res, 200, await snapshot());
+    if (req.method === 'GET' && url.pathname === '/api/catalog') {
+      const a = adapters.find(x => x.id === url.searchParams.get('provider'));
+      if (!a?.listModels) return json(res, 404, { error: 'No catalog for this provider' });
+      const hit = catalogCache.get(a.id);
+      if (hit && Date.now() - hit.at < 10 * 60_000 && !url.searchParams.has('refresh')) return json(res, 200, { models: hit.models, cached: true });
+      try { const models = await a.listModels(); catalogCache.set(a.id, { at: Date.now(), models }); return json(res, 200, { models }); }
+      catch (e) { return json(res, 502, { error: e.message }); }
+    }
     if (req.method === 'GET' && url.pathname === '/api/stream') {
       res.writeHead(200, { 'content-type': 'text/event-stream', 'cache-control': 'no-cache', connection: 'keep-alive' });
       res.write(': hi\n\n'); clients.add(res); req.on('close', () => clients.delete(res)); return;
@@ -122,9 +135,16 @@ const server = http.createServer(async (req, res) => {
         const cap = Number(body.capUsd);
         pending.resolve(body.allow && cap > 0 && cap <= 1000 ? { capUsd: cap } : false); break;
       }
+      case '/api/model': {
+        const a = adapters.find(x => x.id === body.provider);
+        const m = String(body.model ?? '');
+        if (!a?.needsKey || !/^[\w.\-/:]{1,200}$/.test(m)) return json(res, 400, { error: 'Invalid model' });
+        db.setSetting(`${a.id}.model`, m); break;
+      }
       case '/api/revoke': router.revokePaid(PROJECT, body.id); break;
       case '/api/keys': {
-        if (!adapters.some(a => a.id === body.provider && a.billing === 'paid')) return json(res, 400, { error: 'Unknown provider' });
+        if (!adapters.some(a => a.id === body.provider && a.needsKey)) return json(res, 400, { error: 'Unknown provider' });
+        catalogCache.delete(body.provider);
         try { body.remove ? await keys.remove(body.provider) : await keys.set(body.provider, body.key); }
         catch (e) { return json(res, 400, { error: e.message }); }
         break;
