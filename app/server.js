@@ -1,19 +1,21 @@
 // Unify.js local server: serves the chat UI and connects it to the engine.
-//   npm start              -> demo mode (simulated Claude Code + Codex; safe anywhere)
+//   npm start                  -> demo mode (simulated Claude Code + Codex; safe anywhere)
 //   UNIFY_MODE=real npm start  -> drives your installed, signed-in `claude` and `codex` CLIs in UNIFY_CWD
-// Binds to 127.0.0.1 only by default: never expose a server that can run coding agents.
+// Also imported by the desktop app via startServer(). Binds to 127.0.0.1 only: never expose a server that can run coding agents.
 import http from 'node:http';
 import { readFile, mkdir } from 'node:fs/promises';
-import { join, dirname } from 'node:path';
+import { join, dirname, basename } from 'node:path';
+import { createHash } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 import { openDb, createRouter, refreshCheckpoint, renderHandoffPacket, claudeCodeAdapter, codexAdapter, gitCheckpointer } from '../engine/src/index.js';
 import { demoAdapters } from './demo-adapters.js';
 
 const here = dirname(fileURLToPath(import.meta.url));
-const MODE = process.env.UNIFY_MODE === 'real' ? 'real' : 'demo';
-const PORT = Number(process.env.PORT ?? 4317);
-const HOST = process.env.HOST ?? '127.0.0.1';
-let CWD = process.env.UNIFY_CWD ?? process.cwd();
+
+export async function startServer({ mode = 'demo', port = 4317, host = '127.0.0.1', cwd = process.cwd(), dataDir = join(here, '..', '.unify-data'), Database } = {}) {
+const MODE = mode === 'real' ? 'real' : 'demo';
+const PORT = port, HOST = host;
+let CWD = cwd;
 if (MODE === 'demo') {
   // Demo works in a throwaway git repo so checkpoints are real, but nothing of yours is touched.
   const { mkdtempSync, writeFileSync } = await import('node:fs');
@@ -24,13 +26,13 @@ if (MODE === 'demo') {
   writeFileSync(join(CWD, 'README.md'), '# Church presentation app (demo)\n');
   for (const a of [['init', '-q'], ['add', '.'], ['commit', '-qm', 'Initial commit']]) execFileSync('git', a, { cwd: CWD, env });
 }
-const PROJECT = 'default';
 
-const dataDir = join(here, '..', '.unify-data');
+// One project per folder in real mode, so switching folders never mixes their history.
+const PROJECT = MODE === 'demo' ? 'default' : 'p_' + createHash('sha256').update(CWD).digest('hex').slice(0, 16);
 await mkdir(dataDir, { recursive: true });
-const db = openDb(MODE === 'demo' ? ':memory:' : join(dataDir, 'unify.db'));
+const db = openDb(MODE === 'demo' ? ':memory:' : join(dataDir, 'unify.db'), { Database });
 if (!db.getProject(PROJECT)) {
-  db.createProject({ id: PROJECT, name: MODE === 'demo' ? 'Church presentation app' : 'My project', cwd: CWD,
+  db.createProject({ id: PROJECT, name: MODE === 'demo' ? 'Church presentation app' : basename(CWD), cwd: CWD,
     goal: MODE === 'demo' ? 'A reliable, volunteer-friendly presentation app for live church production' : '' });
   db.setPriorities(PROJECT, ['claude-code', 'codex']);
 }
@@ -61,7 +63,7 @@ const readBody = req => new Promise((res, rej) => {
 });
 const json = (res, code, obj) => { res.writeHead(code, { 'content-type': 'application/json' }); res.end(JSON.stringify(obj)); };
 
-http.createServer(async (req, res) => {
+const server = http.createServer(async (req, res) => {
   try {
     const url = new URL(req.url, 'http://x');
     if (req.method === 'GET' && (url.pathname === '/' || url.pathname === '/index.html')) {
@@ -97,4 +99,13 @@ http.createServer(async (req, res) => {
     }
     json(res, 200, { ok: true }); await pushSnapshot();
   } catch (e) { if (!res.headersSent) json(res, 500, { error: String(e.message ?? e) }); }
-}).listen(PORT, HOST, () => console.log(`Unify.js (${MODE} mode) on http://${HOST}:${PORT}${MODE === 'real' ? `  · working in ${CWD}` : ''}`));
+});
+await new Promise((res, rej) => { server.once('error', rej); server.listen(PORT, HOST, res); });
+const url = `http://${HOST}:${server.address().port}`;
+return { url, mode: MODE, cwd: CWD, async close() { for (const c of clients) c.end(); await new Promise(r => server.close(r)); db.close(); } };
+}
+
+if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]) {
+  const s = await startServer({ mode: process.env.UNIFY_MODE, port: Number(process.env.PORT ?? 4317), host: process.env.HOST ?? '127.0.0.1', cwd: process.env.UNIFY_CWD ?? process.cwd() });
+  console.log(`Unify.js (${s.mode} mode) on ${s.url}${s.mode === 'real' ? `  · working in ${s.cwd}` : ''}`);
+}

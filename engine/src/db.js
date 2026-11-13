@@ -1,5 +1,7 @@
-// Durable project state, using Node's built-in SQLite (no dependencies).
-import { DatabaseSync } from 'node:sqlite';
+// Durable project state. Uses Node's built-in SQLite by default (no dependencies).
+// Electron leaves node:sqlite out, so the desktop app passes better-sqlite3 (same sync API) as `Database`.
+let BuiltinSqlite = null;
+try { ({ DatabaseSync: BuiltinSqlite } = await import('node:sqlite')); } catch { /* e.g. inside Electron */ }
 
 const SCHEMA = `
 CREATE TABLE IF NOT EXISTS projects (
@@ -23,8 +25,9 @@ CREATE TABLE IF NOT EXISTS priorities (
 );
 `;
 
-export function openDb(path = ':memory:') {
-  const db = new DatabaseSync(path);
+export function openDb(path = ':memory:', { Database = BuiltinSqlite } = {}) {
+  if (!Database) throw new Error('No SQLite driver: use Node >= 22.13 or pass { Database } (e.g. better-sqlite3)');
+  const db = new Database(path);
   db.exec('PRAGMA journal_mode = WAL;');
   db.exec(SCHEMA);
   const now = () => new Date().toISOString();

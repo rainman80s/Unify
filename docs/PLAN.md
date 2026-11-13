@@ -78,7 +78,7 @@ gets its own worktree, results are merged by PR-like review, and consequential a
 ## 6. Decisions
 
 Decided (Nov 13, 2026): the name is **Unify.js** (a trademark check is still needed before public launch). First providers: **Claude Code, then Codex**.
-M0 engine is built in `engine/`.
+Built so far: M0 engine; M1 chat app with Claude Code and Codex adapters (not yet run against the live CLIs); M2 git snapshot after every turn; M5 Electron shell (runs and packages on Linux; Mac build, signing, and notarization not done yet).
 
 Still open:
 
