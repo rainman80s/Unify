@@ -4,3 +4,4 @@ export { createRouter } from './router.js';
 export { claudeCodeAdapter, parseClaudeLine } from './adapters/claude-code.js';
 export { codexAdapter, parseCodexLine } from './adapters/codex.js';
 export { fakeAdapter } from './adapters/fake.js';
+export { gitCheckpointer, isGitRepo } from './git.js';

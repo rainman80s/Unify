@@ -8,6 +8,7 @@ One workspace for many AIs. Its context engine keeps a ready-made handoff, so wh
 - `engine/src/context.js`: folds every event into structured state and renders the handoff packet. It never calls a model.
 - `engine/src/router.js`: priority order, limit detection and cooldown, approval required for paid providers, flags interrupted commands
 - `app/server.js` + `app/index.html`: local chat UI: streaming replies, handoff cards, "see what was sent", priority order, pause/hand off now, goal and decisions
+- `engine/src/git.js`: after every turn, saves a snapshot of the working tree to `refs/unify/<project>` (a temporary index, so your branch, staging, and files are untouched). The handoff packet cites the commit and diffstat.
 - `engine/src/adapters/`: Claude Code CLI, Codex CLI, and a scripted fake used for tests and the demo
 
 ```sh

@@ -1,8 +1,11 @@
-// Simulated Claude Code and Codex for the cloud preview. No accounts, no network, no files touched.
+// Simulated Claude Code and Codex for the cloud preview. No accounts or network; they only write into a throwaway demo repo.
 import { fakeAdapter } from '../engine/src/index.js';
+import { mkdirSync, appendFileSync } from 'node:fs';
+import { join, dirname } from 'node:path';
 
 const wait = ms => new Promise(r => setTimeout(r, ms));
-function streamed(id, name, reply) {
+function streamed(id, name, reply, cwd) {
+  const touch = (path, line) => { const f = join(cwd, path); mkdirSync(dirname(f), { recursive: true }); appendFileSync(f, line + '\n'); };
   const a = fakeAdapter({ id, name });
   a.limitPending = false;
   a.run = async function* ({ prompt }) {
@@ -12,8 +15,12 @@ function streamed(id, name, reply) {
     yield { type: 'session', id: `${id}-demo-session` };
     const words = reply(request, handoff).split(/(?<= )/);
     for (let i = 0; i < words.length; i++) {
+      if (i === Math.floor(words.length / 2)) {
+        const path = id === 'codex' ? 'src/editor/SlideList.tsx' : 'src/editor/SlideEditor.tsx';
+        touch(path, `// ${name}: ${request.slice(0, 60)}`);
+        yield { type: 'file_edit', path };
+      }
       if (this.limitPending && i === Math.floor(words.length / 2)) {
-        yield { type: 'file_edit', path: 'src/editor/SlideEditor.tsx' };
         yield { type: 'command_start', id: `cmd-${Date.now()}`, cmd: 'npm run build' };
         await wait(300);
         this.limitPending = false;
@@ -27,11 +34,11 @@ function streamed(id, name, reply) {
   return a;
 }
 
-export function demoAdapters() {
+export function demoAdapters({ cwd }) {
   const claude = streamed('claude-code', 'Claude Code', (req) =>
-    `On it. For "${req.slice(0, 80)}", I'll start from the project goal and the decisions so far. First I'll sketch the component structure, then wire up the main controls, keeping the volunteer workflow to as few clicks as possible. I'll note any decisions as I go so they carry over if another model takes over.`);
+    `On it. For "${req.slice(0, 80)}", I'll start from the project goal and the decisions so far. First I'll sketch the component structure, then wire up the main controls, keeping the volunteer workflow to as few clicks as possible. I'll note any decisions as I go so they carry over if another model takes over.`, cwd);
   const codex = streamed('codex', 'Codex', (req, handoff) =>
     (handoff ? `Picking up from Claude Code's checkpoint. I can see the goal, the recorded decisions, and that src/editor/SlideEditor.tsx was mid-edit, so I'll check that file before changing anything. I won't re-run the interrupted \`npm run build\` until the edit is verified. ` : '') +
-    `Continuing with "${req.slice(0, 80)}": next I'll finish the editor layout and add a quick test for the live controls.`);
+    `Continuing with "${req.slice(0, 80)}": next I'll finish the editor layout and add a quick test for the live controls.`, cwd);
   return { adapters: [claude, codex], limitNext(id) { const a = id === 'codex' ? codex : claude; a.limitPending = true; } };
 }

@@ -6,14 +6,24 @@ import http from 'node:http';
 import { readFile, mkdir } from 'node:fs/promises';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { openDb, createRouter, refreshCheckpoint, renderHandoffPacket, claudeCodeAdapter, codexAdapter } from '../engine/src/index.js';
+import { openDb, createRouter, refreshCheckpoint, renderHandoffPacket, claudeCodeAdapter, codexAdapter, gitCheckpointer } from '../engine/src/index.js';
 import { demoAdapters } from './demo-adapters.js';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const MODE = process.env.UNIFY_MODE === 'real' ? 'real' : 'demo';
 const PORT = Number(process.env.PORT ?? 4317);
 const HOST = process.env.HOST ?? '127.0.0.1';
-const CWD = process.env.UNIFY_CWD ?? process.cwd();
+let CWD = process.env.UNIFY_CWD ?? process.cwd();
+if (MODE === 'demo') {
+  // Demo works in a throwaway git repo so checkpoints are real, but nothing of yours is touched.
+  const { mkdtempSync, writeFileSync } = await import('node:fs');
+  const { tmpdir } = await import('node:os');
+  const { execFileSync } = await import('node:child_process');
+  CWD = mkdtempSync(join(tmpdir(), 'unify-demo-'));
+  const env = { ...process.env, GIT_AUTHOR_NAME: 'demo', GIT_AUTHOR_EMAIL: 'demo@localhost', GIT_COMMITTER_NAME: 'demo', GIT_COMMITTER_EMAIL: 'demo@localhost' };
+  writeFileSync(join(CWD, 'README.md'), '# Church presentation app (demo)\n');
+  for (const a of [['init', '-q'], ['add', '.'], ['commit', '-qm', 'Initial commit']]) execFileSync('git', a, { cwd: CWD, env });
+}
 const PROJECT = 'default';
 
 const dataDir = join(here, '..', '.unify-data');
@@ -25,11 +35,12 @@ if (!db.getProject(PROJECT)) {
   db.setPriorities(PROJECT, ['claude-code', 'codex']);
 }
 
-const demo = MODE === 'demo' ? demoAdapters() : null;
+const demo = MODE === 'demo' ? demoAdapters({ cwd: CWD }) : null;
 const adapters = demo ? demo.adapters : [claudeCodeAdapter(), codexAdapter()];
 const clients = new Set();
 const broadcast = msg => { const s = `data: ${JSON.stringify(msg)}\n\n`; for (const c of clients) c.write(s); };
-const router = createRouter({ db, adapters, onEvent: ev => broadcast({ kind: 'event', event: ev }) });
+const router = createRouter({ db, adapters, onEvent: ev => broadcast({ kind: 'event', event: ev }),
+  checkpointer: gitCheckpointer({ cwd: CWD, projectId: PROJECT }) });
 let busy = false;
 
 async function snapshot() {

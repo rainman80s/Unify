@@ -15,7 +15,8 @@ export function emptyState(project) {
     lastError: null,
     providersUsed: [],
     lastProvider: null, // who ran the most recent turn
-    sessions: {},       // providerId -> provider-side session id, for resuming
+    sessions: {},
+    checkpoint: null,   // { commit, base, diffstat } latest git snapshot of the working tree       // providerId -> provider-side session id, for resuming
   };
 }
 
@@ -41,6 +42,7 @@ export function applyEvent(state, ev) {
       if (t) Object.assign(t, d); else s.tasks.push({ status: 'open', ...d });
       break;
     }
+    case 'git_checkpoint': s.checkpoint = { commit: d.commit, base: d.base, diffstat: d.diffstat, by: ev.provider }; break;
     case 'session': s.sessions[ev.provider] = d.id; break;
     case 'goal': s.goal = d.text; break;
     case 'error': s.lastError = { provider: ev.provider, message: d.message }; break;
@@ -99,6 +101,9 @@ ${state.lastAssistantText.slice(-1500) || '(none)'}
 
 ## Files touched so far
 ${list(state.filesTouched, f => `- ${f}`)}
+
+## Code checkpoint
+${state.checkpoint ? `Unify.js saved the working tree after ${state.checkpoint.by}'s last turn as commit ${state.checkpoint.commit.slice(0, 12)} (ref refs/unify/...).${state.checkpoint.base ? `\nChanges since HEAD (\`git diff ${state.checkpoint.base.slice(0, 12)} ${state.checkpoint.commit.slice(0, 12)}\`):\n${state.checkpoint.diffstat || '(none)'}` : ''}` : '(no git checkpoint: not a git repository)'}
 
 ## Interrupted actions — DO NOT re-run without checking
 ${list(state.interrupted, c => `- \`${c.cmd}\` (started by ${c.provider}, completion unknown)`)}

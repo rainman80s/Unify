@@ -3,7 +3,7 @@
 import { randomUUID } from 'node:crypto';
 import { refreshCheckpoint, renderHandoffPacket } from './context.js';
 
-export function createRouter({ db, adapters, approvePaid = async () => false, onEvent = () => {} }) {
+export function createRouter({ db, adapters, approvePaid = async () => false, onEvent = () => {}, checkpointer = null }) {
   const byId = new Map(adapters.map(a => [a.id, a]));
   const cooling = new Map(); // providerId -> retryAt (ms) after hitting a limit
 
@@ -11,6 +11,14 @@ export function createRouter({ db, adapters, approvePaid = async () => false, on
     const seq = db.appendEvent(projectId, ev);
     refreshCheckpoint(db, projectId); // keep handoff state current after every event
     onEvent({ seq, projectId, ...ev });
+  }
+
+  async function snapshot(projectId, provider, turnId, label) {
+    if (!checkpointer) return;
+    try {
+      const cp = await checkpointer.checkpoint({ provider, label });
+      if (cp && !cp.unchanged) record(projectId, { turnId, provider, type: 'git_checkpoint', data: cp });
+    } catch (e) { record(projectId, { turnId, provider, type: 'error', data: { message: `Checkpoint failed: ${e.message}` } }); }
   }
 
   async function eligible(projectId, exclude) {
@@ -71,6 +79,7 @@ export function createRouter({ db, adapters, approvePaid = async () => false, on
         const { type, ...data } = ev;
         record(projectId, { turnId, provider: next.id, type, data });
       }
+      await snapshot(projectId, next.id, turnId, outcome === 'done' ? 'turn finished' : `stopped: ${outcome}`);
       if (outcome === 'done') {
         record(projectId, { turnId, provider: next.id, type: 'turn_end', data: {} });
         return { provider: next.id, handoffs, outcome };

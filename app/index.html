@@ -219,7 +219,7 @@ function renderThread() {
       : 'Messages go to your own Claude Code and Codex, in priority order. Context is saved after every step.'));
     t.append(e);
   }
-  let turn = null;
+  let turn = null, lastTurn = null;
   for (const ev of evs) {
     const d = ev.data;
     switch (ev.type) {
@@ -233,7 +233,7 @@ function renderThread() {
         const b = el('div', 'body'); const w = el('div', 'who', nameOf(ev.provider)); w.append(el('span', null, time(ev.at)));
         const text = el('div', 'text'); const chips = el('div', 'chips');
         b.append(w, text, chips); m.append(b); t.append(m);
-        turn = { text, chips, cmds: {} }; break;
+        turn = lastTurn = { text, chips, cmds: {} }; break;
       }
       case 'text': if (turn) turn.text.textContent += d.text; break;
       case 'file_edit': turn?.chips.append(el('span', 'chip', '✎ ' + d.path)); break;
@@ -253,6 +253,10 @@ function renderThread() {
       }
       case 'error': { const n = el('div', 'note bad'); n.append(el('strong', null, '⚠ Problem'), el('br'), d.message); t.append(n); break; }
       case 'skipped': { const n = el('div', 'note'); n.append(el('strong', null, `Skipped ${nameOf(ev.provider)}`), el('br'), d.reason); t.append(n); break; }
+      case 'git_checkpoint': {
+        const c = el('span', 'chip', '⎇ snapshot ' + d.commit.slice(0, 7)); c.title = d.diffstat || 'Working tree saved';
+        ((turn ?? lastTurn)?.chips ?? t).append(c); break;
+      }
       case 'turn_end': turn = null; break;
     }
   }
@@ -287,6 +291,7 @@ function renderRail() {
   const di = el('div', 'addrow'); const dinput = el('input'); dinput.placeholder = 'Add a decision…';
   const db = el('button', 'sbtn', 'Add'); db.onclick = () => dinput.value.trim() && post('/api/decision', { text: dinput.value.trim() }); di.append(dinput, db); decRow.append(di);
   kv('Files touched', ul(st.filesTouched, 'None yet'));
+  if (st.checkpoint) kv('Code snapshot', `${st.checkpoint.commit.slice(0, 7)} after ${nameOf(st.checkpoint.by)}'s turn · your branch untouched`);
   kv('Where work is', st.inFlight ? `${nameOf(st.inFlight.provider)} was ${st.inFlight.step}${st.inFlight.interruptedBecause ? ' (stopped)' : ''}` : (st.lastProvider ? `Last turn by ${nameOf(st.lastProvider)} finished` : 'Nothing yet'));
   if (st.interrupted.length) kv('Interrupted, will not auto-rerun', ul(st.interrupted.map(x => x.cmd), ''));
 
@@ -334,7 +339,7 @@ es.onmessage = m => {
   if (msg.kind === 'event' && S) {
     S.events.push({ ...msg.event, data: msg.event.data, at: new Date().toISOString() });
     if (!pending) { pending = true; requestAnimationFrame(() => { pending = false; render(); }); }
-    if (['handoff', 'turn_interrupted', 'decision', 'file_edit'].includes(msg.event.type)) load();
+    if (['handoff', 'turn_interrupted', 'decision', 'file_edit', 'git_checkpoint'].includes(msg.event.type)) load();
   }
 };
 load();

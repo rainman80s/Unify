@@ -106,3 +106,31 @@ test('same provider resumes its session; switching provider sends the packet', a
   const st = await router.statuses('p1');
   assert.equal(st[0].available, false);
 });
+
+test('git checkpoint after each turn, without touching branch, index, or files', async () => {
+  const { mkdtempSync, writeFileSync, readFileSync } = await import('node:fs');
+  const { join } = await import('node:path');
+  const { tmpdir } = await import('node:os');
+  const { execFileSync } = await import('node:child_process');
+  const { gitCheckpointer } = await import('../src/index.js');
+  const dir = mkdtempSync(join(tmpdir(), 'unify-git-'));
+  const g = (...a) => execFileSync('git', a, { cwd: dir, encoding: 'utf8', env: { ...process.env, GIT_AUTHOR_NAME: 't', GIT_AUTHOR_EMAIL: 't@t', GIT_COMMITTER_NAME: 't', GIT_COMMITTER_EMAIL: 't@t' } }).trim();
+  g('init', '-q'); writeFileSync(join(dir, 'a.txt'), 'one\n'); g('add', '.'); g('commit', '-qm', 'init');
+  const head = g('rev-parse', 'HEAD');
+
+  const claude = fakeAdapter({ id: 'claude-code', name: 'Claude Code' });
+  claude.run = async function* () { writeFileSync(join(dir, 'a.txt'), 'two\n'); writeFileSync(join(dir, 'new.txt'), 'x'); yield { type: 'file_edit', path: 'a.txt' }; yield { type: 'limit', reason: 'usage limit' }; };
+  const codex = fakeAdapter({ id: 'codex', name: 'Codex', script: [{ type: 'done' }] });
+  const db = openDb(); db.createProject({ id: 'p1', name: 'x', goal: 'g' }); db.setPriorities('p1', ['claude-code', 'codex']);
+  const router = createRouter({ db, adapters: [claude, codex], checkpointer: gitCheckpointer({ cwd: dir, projectId: 'p1' }) });
+  await router.send('p1', 'edit it');
+
+  const cp = g('rev-parse', 'refs/unify/p1');
+  assert.equal(g('show', `${cp}:a.txt`), 'two');
+  assert.equal(g('show', `${cp}:new.txt`), 'x');
+  assert.equal(g('rev-parse', 'HEAD'), head);              // branch untouched
+  assert.equal(g('status', '--porcelain'), 'M a.txt\n?? new.txt'); // index untouched: still unstaged
+  assert.equal(readFileSync(join(dir, 'a.txt'), 'utf8'), 'two\n'); // files untouched
+  assert.match(codex.prompts[0], new RegExp(`commit ${cp.slice(0, 12)}`));
+  assert.match(codex.prompts[0], /a\.txt/);
+});
