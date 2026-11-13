@@ -30,7 +30,7 @@ See `docs/PLAN.md` for the roadmap and `docs/HANDOFF.md` for the original brief.
 ```sh
 cd desktop && npm install   # also rebuilds better-sqlite3 for Electron (Electron has no node:sqlite)
 npm start                   # opens in demo mode; File > Open Project Folder… for real mode
-npm run dist:mac            # builds .dmg files for Apple Silicon and Intel (ad-hoc signed until we add a Developer ID)
+npm run dist:mac            # builds .dmg files for Apple Silicon and Intel (signed with the self-signed release certificate if present, else ad-hoc; see desktop/mac-sign.cjs)
 ```
 **Releasing:** bump `version` in `desktop/package.json`, commit to `main`, then `cd desktop && npm run release`. It builds both .dmg files and publishes a GitHub Release; installed apps show "Update available" (they can't update themselves until the app is signed).
 
