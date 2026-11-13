@@ -21,6 +21,8 @@ npm test       # Node >= 22.13, no dependencies
 npm run demo   # simulated Claude Code -> Codex handoff
 ```
 
+**On a Mac:** follow `docs/MAC_SETUP.md`. `npm run doctor -- --handoff` tests every real connection.
+
 See `docs/PLAN.md` for the roadmap and `docs/HANDOFF.md` for the original brief.
 
 ## Desktop app

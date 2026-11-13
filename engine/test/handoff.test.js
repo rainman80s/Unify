@@ -134,3 +134,15 @@ test('git checkpoint after each turn, without touching branch, index, or files',
   assert.match(codex.prompts[0], new RegExp(`commit ${cp.slice(0, 12)}`));
   assert.match(codex.prompts[0], /a\.txt/);
 });
+
+test('Codex: transient reconnect errors are ignored; auth failures say how to sign in; resume uses supported flags', async () => {
+  const { codexArgs } = await import('../src/index.js');
+  assert.deepEqual(parseCodexLine({ type: 'error', message: 'Reconnecting... 2/5 (unexpected status 401)' }), []);
+  assert.match(parseCodexLine({ type: 'turn.failed', error: { message: 'unexpected status 401 Unauthorized' } })[0].message, /codex login/);
+  assert.deepEqual(parseCodexLine({ type: 'thread.started', thread_id: 't1' }), [{ type: 'session', id: 't1' }]);
+  const resume = codexArgs({ prompt: 'p', cwd: '/x', sessionId: 't1' });
+  assert.ok(!resume.includes('--sandbox') && !resume.includes('--cd'));
+  assert.deepEqual(resume.slice(0, 2), ['exec', 'resume']);
+  assert.ok(codexArgs({ prompt: 'p', cwd: '/x' }).includes('--cd'));
+  assert.match(parseClaudeLine({ type: 'result', is_error: true, result: 'Not logged in · Please run /login' })[0].message, /not signed in/);
+});

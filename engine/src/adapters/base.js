@@ -11,6 +11,8 @@
 //     run({ prompt, cwd, signal }): AsyncIterable<event> }
 import { spawn } from 'node:child_process';
 import { createInterface } from 'node:readline';
+import { appendFileSync, mkdirSync } from 'node:fs';
+import { join } from 'node:path';
 
 export const LIMIT_PATTERNS = [
   /usage limit/i, /rate.?limit/i, /\b429\b/, /quota/i, /hit your limit/i, /limit reached/i, /out of credits/i, /overloaded/i,
@@ -18,7 +20,10 @@ export const LIMIT_PATTERNS = [
 export const looksLikeLimit = (msg = '') => LIMIT_PATTERNS.some(r => r.test(msg));
 
 /** Spawn a CLI that prints JSON lines; yield parsed objects. Never uses a shell. */
-export async function* spawnJsonLines(cmd, args, { cwd, signal, env } = {}) {
+// Set UNIFY_RAW_LOG=<dir> to save every raw line a CLI prints (used by `npm run doctor` to check our parsers).
+export async function* spawnJsonLines(cmd, args, { cwd, signal, env, rawLog } = {}) {
+  const logDir = rawLog && process.env.UNIFY_RAW_LOG;
+  if (logDir) mkdirSync(logDir, { recursive: true });
   const child = spawn(cmd, args, { cwd, signal, env: { ...process.env, ...env }, stdio: ['ignore', 'pipe', 'pipe'] });
   let stderr = '';
   child.stderr.on('data', d => { stderr = (stderr + d).slice(-4000); });
@@ -27,6 +32,7 @@ export async function* spawnJsonLines(cmd, args, { cwd, signal, env } = {}) {
   const rl = createInterface({ input: child.stdout });
   for await (const line of rl) {
     if (!line.trim()) continue;
+    if (logDir) appendFileSync(join(logDir, `${rawLog}.jsonl`), line + '\n');
     try { yield { json: JSON.parse(line) }; } catch { yield { raw: line }; }
   }
   const code = await Promise.race([exited, spawnError]);
