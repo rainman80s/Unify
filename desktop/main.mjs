@@ -1,5 +1,5 @@
 // Unify.js desktop shell: runs the local engine + server in-process and shows it in a native window.
-import { app, BrowserWindow, Menu, dialog, ipcMain, shell } from 'electron';
+import { app, BrowserWindow, Menu, dialog, ipcMain, shell, safeStorage } from 'electron';
 import { execFileSync } from 'node:child_process';
 import { readFileSync, writeFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
@@ -14,6 +14,7 @@ const isMac = process.platform === 'darwin';
 const { existsSync } = await import('node:fs');
 const serverPath = existsSync(join(here, 'bundle/app/server.js')) ? join(here, 'bundle/app/server.js') : join(here, '../app/server.js');
 const { startServer } = await import(pathToFileURL(serverPath).href);
+const { createSecretStore } = await import(pathToFileURL(join(dirname(serverPath), 'secrets.js')).href);
 
 // Apps launched from Finder don't get your shell PATH, so `claude` / `codex` wouldn't be found. Borrow it from a login shell.
 function adoptLoginShellPath() {
@@ -39,6 +40,11 @@ async function boot() {
   server = await startServer({
     mode: folder ? 'real' : 'demo', cwd: folder ?? app.getPath('home'), port: 0,
     dataDir: join(app.getPath('userData'), 'data'), Database,
+    // API keys are encrypted with the OS keychain (safeStorage). If that's unavailable, keys can only come from env vars.
+    secrets: safeStorage.isEncryptionAvailable()
+      ? createSecretStore({ file: join(app.getPath('userData'), 'keys.json'),
+          encrypt: s => safeStorage.encryptString(s).toString('base64'), decrypt: b => safeStorage.decryptString(Buffer.from(b, 'base64')) })
+      : createSecretStore({ file: null }),
   });
   console.log(`[unify] ${server.mode} mode at ${server.url}`);
   app.setName('Unify.js');

@@ -17,7 +17,7 @@ function streamed(id, name, reply, cwd) {
     for (let i = 0; i < words.length; i++) {
       if (i === Math.floor(words.length / 2)) {
         const path = id === 'codex' ? 'src/editor/SlideList.tsx' : 'src/editor/SlideEditor.tsx';
-        touch(path, `// ${name}: ${request.slice(0, 60)}`);
+        if (!a.chatOnly) touch(path, `// ${name}: ${request.slice(0, 60)}`);
         yield { type: 'file_edit', path };
       }
       if (this.limitPending && i === Math.floor(words.length / 2)) {
@@ -40,5 +40,19 @@ export function demoAdapters({ cwd }) {
   const codex = streamed('codex', 'Codex', (req, handoff) =>
     (handoff ? `Picking up from Claude Code's checkpoint. I can see the goal, the recorded decisions, and that src/editor/SlideEditor.tsx was mid-edit, so I'll check that file before changing anything. I won't re-run the interrupted \`npm run build\` until the edit is verified. ` : '') +
     `Continuing with "${req.slice(0, 80)}": next I'll finish the editor layout and add a quick test for the live controls.`, cwd);
-  return { adapters: [claude, codex], limitNext(id) { const a = id === 'codex' ? codex : claude; a.limitPending = true; } };
+  // Simulated paid API: chat-only, reports token usage and an (illustrative) cost. No money is involved.
+  const deepseek = streamed('deepseek', 'DeepSeek API', (req, handoff) =>
+    (handoff ? `Picking up from the checkpoint in chat-only mode, so I can't edit files myself. ` : '') +
+    `For "${req.slice(0, 80)}", here is the change I'd make next, as a patch for you or Claude Code to apply later.`, cwd);
+  Object.assign(deepseek, { billing: 'paid', chatOnly: true, model: 'deepseek-chat', pricePerMTok: { input: 0.28, output: 0.42 } });
+  const baseRun = deepseek.run;
+  deepseek.run = async function* (o) {
+    for await (const ev of baseRun.call(this, o)) {
+      if (ev.type === 'file_edit') continue; // chat-only: it can't touch files
+      if (ev.type === 'done') { const i = Math.ceil(o.prompt.length / 3), out = 400; yield { type: 'usage', inputTokens: i, outputTokens: out, cost: (i * 0.28 + out * 0.42) / 1e6 }; }
+      yield ev;
+    }
+  };
+  const all = { 'claude-code': claude, codex, deepseek };
+  return { adapters: [claude, codex, deepseek], limitNext(id) { (all[id] ?? claude).limitPending = true; } };
 }

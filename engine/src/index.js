@@ -5,3 +5,4 @@ export { claudeCodeAdapter, parseClaudeLine } from './adapters/claude-code.js';
 export { codexAdapter, parseCodexLine } from './adapters/codex.js';
 export { fakeAdapter } from './adapters/fake.js';
 export { gitCheckpointer, isGitRepo } from './git.js';
+export { openAICompatibleAdapter, deepseekAdapter, sseJson } from './adapters/openai-compatible.js';

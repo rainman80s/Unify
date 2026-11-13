@@ -1,11 +1,14 @@
 // Router: runs a turn on the highest-priority available provider; on a limit, hands off to the next one
-// with a packet built from already-recorded state. Paid providers require explicit approval.
+// with a packet built from already-recorded state.
+// Paid providers are never used silently: approvePaid({ provider, projectId, spentUsd }) must return
+// { capUsd } (allow up to that total spend for this project) or false. The cap is enforced mid-turn.
 import { randomUUID } from 'node:crypto';
 import { refreshCheckpoint, renderHandoffPacket } from './context.js';
 
 export function createRouter({ db, adapters, approvePaid = async () => false, onEvent = () => {}, checkpointer = null }) {
   const byId = new Map(adapters.map(a => [a.id, a]));
   const cooling = new Map(); // providerId -> retryAt (ms) after hitting a limit
+  const approvals = new Map(); // `${projectId}:${providerId}` -> capUsd
 
   function record(projectId, ev) {
     const seq = db.appendEvent(projectId, ev);
@@ -50,9 +53,20 @@ export function createRouter({ db, adapters, approvePaid = async () => false, on
         return { provider: null, handoffs, outcome: 'stalled' };
       }
       tried.add(next.id);
-      if (next.billing === 'paid' && !(await approvePaid({ provider: next, projectId }))) {
-        record(projectId, { provider: next.id, type: 'skipped', data: { reason: 'paid provider not approved' } });
-        continue;
+      let capUsd = Infinity;
+      if (next.billing === 'paid') {
+        const k = `${projectId}:${next.id}`;
+        const spentUsd = refreshCheckpoint(db, projectId).spend[next.id]?.usd ?? 0;
+        if (!(approvals.get(k) > spentUsd)) {
+          const ok = await approvePaid({ provider: next, projectId, spentUsd });
+          if (!ok || !(ok.capUsd > spentUsd)) {
+            record(projectId, { provider: next.id, type: 'skipped', data: { reason: 'Paid provider not approved, so it was not used.' } });
+            continue;
+          }
+          approvals.set(k, ok.capUsd);
+          record(projectId, { provider: next.id, type: 'paid_approved', data: { capUsd: ok.capUsd } });
+        }
+        capUsd = approvals.get(k);
       }
       // Same provider as last turn: just continue its session. Different provider: send the handoff packet.
       let prompt = text;
@@ -68,7 +82,10 @@ export function createRouter({ db, adapters, approvePaid = async () => false, on
       const turnId = randomUUID();
       record(projectId, { turnId, provider: next.id, type: 'turn_start', data: {} });
       let outcome = 'done';
-      for await (const ev of next.run({ prompt, cwd, signal, sessionId: prev?.id === next.id ? sessionId : undefined })) {
+      const turnAbort = new AbortController();
+      signal?.addEventListener('abort', () => turnAbort.abort(), { once: true });
+      for await (const ev of next.run({ prompt, cwd, signal: turnAbort.signal, sessionId: prev?.id === next.id ? sessionId : undefined,
+        maxCostUsd: capUsd - (refreshCheckpoint(db, projectId).spend[next.id]?.usd ?? 0) })) {
         if (ev.type === 'limit') {
           cooling.set(next.id, ev.retryAt ? Number(ev.retryAt) * (ev.retryAt < 1e12 ? 1000 : 1) : Date.now() + 15 * 60_000);
           record(projectId, { turnId, provider: next.id, type: 'turn_interrupted', data: { reason: ev.reason || 'usage limit' } });
@@ -78,12 +95,19 @@ export function createRouter({ db, adapters, approvePaid = async () => false, on
         if (ev.type === 'done') break;
         const { type, ...data } = ev;
         record(projectId, { turnId, provider: next.id, type, data });
+        if (type === 'usage' && (refreshCheckpoint(db, projectId).spend[next.id]?.usd ?? 0) >= capUsd) {
+          approvals.delete(`${projectId}:${next.id}`);
+          record(projectId, { turnId, provider: next.id, type: 'turn_interrupted', data: { reason: `Spending cap of $${capUsd.toFixed(2)} reached for ${next.name}` } });
+          outcome = 'cap'; break;
+        }
       }
       await snapshot(projectId, next.id, turnId, outcome === 'done' ? 'turn finished' : `stopped: ${outcome}`);
       if (outcome === 'done') {
         record(projectId, { turnId, provider: next.id, type: 'turn_end', data: {} });
         return { provider: next.id, handoffs, outcome };
       }
+      if (outcome === 'cap') turnAbort.abort(); // after leaving the stream, so the adapter can close cleanly
+      if (outcome === 'cap') { await snapshot(projectId, next.id, turnId, 'stopped: spending cap'); return { provider: null, handoffs, outcome: 'cap' }; }
       if (outcome === 'error') {
         record(projectId, { turnId, provider: next.id, type: 'turn_interrupted', data: { reason: 'error' } });
       }
@@ -95,6 +119,7 @@ export function createRouter({ db, adapters, approvePaid = async () => false, on
   /** Manually take a provider out of rotation (e.g. "Hand off now"), or put it back. */
   function pause(providerId, ms = 60 * 60_000) { cooling.set(providerId, Date.now() + ms); }
   function resume(providerId) { cooling.delete(providerId); }
+  function revokePaid(projectId, providerId) { approvals.delete(`${projectId}:${providerId}`); }
 
   async function statuses(projectId) {
     return Promise.all(db.priorities(projectId).map(async id => {
@@ -106,5 +131,5 @@ export function createRouter({ db, adapters, approvePaid = async () => false, on
     }));
   }
 
-  return { send, pause, resume, statuses };
+  return { send, pause, resume, statuses, revokePaid, approvalFor: (projectId, id) => approvals.get(`${projectId}:${id}`) ?? null };
 }

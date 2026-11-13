@@ -46,7 +46,7 @@ test('paid providers are never used without approval', async () => {
 test('paid provider runs when the user approves', async () => {
   const deepseek = fakeAdapter({ id: 'deepseek', billing: 'paid', script: [{ type: 'done' }] });
   const claude = fakeAdapter({ id: 'claude-code', script: [{ type: 'limit', reason: 'rate limit' }] });
-  const { router } = setup([claude, deepseek], ['claude-code', 'deepseek'], { approvePaid: async () => true });
+  const { router } = setup([claude, deepseek], ['claude-code', 'deepseek'], { approvePaid: async () => ({ capUsd: 1 }) });
   assert.equal((await router.send('p1', 'hi')).provider, 'deepseek');
 });
 

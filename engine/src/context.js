@@ -16,6 +16,7 @@ export function emptyState(project) {
     providersUsed: [],
     lastProvider: null, // who ran the most recent turn
     sessions: {},
+    spend: {},         // providerId -> { usd, inputTokens, outputTokens, unpriced } for metered providers
     checkpoint: null,   // { commit, base, diffstat } latest git snapshot of the working tree       // providerId -> provider-side session id, for resuming
   };
 }
@@ -43,6 +44,12 @@ export function applyEvent(state, ev) {
       break;
     }
     case 'git_checkpoint': s.checkpoint = { commit: d.commit, base: d.base, diffstat: d.diffstat, by: ev.provider }; break;
+    case 'usage': {
+      const sp = s.spend[ev.provider] ??= { usd: 0, inputTokens: 0, outputTokens: 0, unpriced: false };
+      sp.inputTokens += d.inputTokens ?? 0; sp.outputTokens += d.outputTokens ?? 0;
+      if (d.cost == null) sp.unpriced = true; else sp.usd += d.cost;
+      break;
+    }
     case 'session': s.sessions[ev.provider] = d.id; break;
     case 'goal': s.goal = d.text; break;
     case 'error': s.lastError = { provider: ev.provider, message: d.message }; break;

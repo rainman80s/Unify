@@ -9,6 +9,7 @@ One workspace for many AIs. Its context engine keeps a ready-made handoff, so wh
 - `engine/src/router.js`: priority order, limit detection and cooldown, approval required for paid providers, flags interrupted commands
 - `app/server.js` + `app/index.html`: local chat UI: streaming replies, handoff cards, "see what was sent", priority order, pause/hand off now, goal and decisions
 - `engine/src/git.js`: after every turn, saves a snapshot of the working tree to `refs/unify/<project>` (a temporary index, so your branch, staging, and files are untouched). The handoff packet cites the commit and diffstat.
+- `engine/src/adapters/openai-compatible.js`: DeepSeek (and any OpenAI-compatible API, such as NVIDIA NIM or OpenRouter). Paid AIs never run without your approval in the app. You set a per-project spending cap, which also limits how long each reply can be. Keys live in `app/secrets.js`: encrypted with the OS keychain in the desktop app, or read from `DEEPSEEK_API_KEY` otherwise, and never written to chat history or packets.
 - `desktop/`: Electron shell. It runs the server in-process, adds File → Open Project Folder… (switches to real mode for that folder), borrows your login-shell PATH so a Finder-launched app can find `claude`/`codex`, and uses macOS vibrancy and inset traffic lights.
 - `engine/src/adapters/`: Claude Code CLI, Codex CLI, and a scripted fake used for tests and the demo
 

@@ -71,6 +71,20 @@ button{cursor:pointer}
 .av{width:30px;height:30px;flex:none;border-radius:10px;display:grid;place-items:center;font-weight:700;font-size:13px;background:var(--accent-soft);color:var(--accent-ink)}
 .av.user{background:var(--soft);color:var(--muted)}
 .av.codex{background:var(--codex-bg);color:var(--codex-ink)}
+.av.paid{background:#f0e9fb;color:#8a58bf}
+.paidline{display:block;color:var(--faint);font-weight:400;font-size:10.5px;margin-top:2px}
+.paidline b{color:var(--ink);font-weight:600}
+.tagpaid{display:inline-block;font-size:9px;font-weight:700;letter-spacing:.4px;color:#8a58bf;background:#f0e9fb;border-radius:5px;padding:1px 5px;margin-left:5px;vertical-align:1px}
+.dbody{padding:16px 18px;font-size:13px;line-height:1.6}
+.dbody p{margin:0 0 12px}
+.dbody .fine{font-size:11.5px;color:var(--muted)}
+.caps{display:flex;gap:6px;flex-wrap:wrap;margin:6px 0 14px}
+.caps button{border:1px solid var(--line);background:var(--soft);border-radius:8px;padding:7px 12px;font-size:12px}
+.caps button.on{border-color:var(--accent);background:var(--accent-soft);color:var(--accent-ink);font-weight:650}
+.drow{display:flex;gap:8px;justify-content:flex-end;padding:12px 18px;border-top:1px solid var(--line)}
+.drow button{width:auto}
+.keyin{width:100%;border:1px solid var(--line);background:var(--soft);border-radius:9px;padding:9px 10px;font:13px ui-monospace,Menlo,monospace;margin:4px 0 6px}
+.err{color:var(--bad);font-size:12px;min-height:16px}
 .body{flex:1;min-width:0}
 .who{font-weight:700;font-size:12px;margin-bottom:4px}
 .who span{font-weight:400;color:var(--faint);margin-left:6px}
@@ -189,6 +203,29 @@ body.desktop:not(.mac){background:var(--bg)}
   </aside>
 </div>
 
+<dialog id="approve">
+  <div class="dhead"><span id="atitle">Use a paid AI?</span></div>
+  <div class="dbody">
+    <p id="abody"></p>
+    <p class="fine" id="aprice"></p>
+    <b style="font-size:12px">Spending cap for this project</b>
+    <div class="caps" id="caps"></div>
+    <p class="fine">Unify.js stops when the cap is reached and asks again. It never switches to a paid AI without asking.</p>
+  </div>
+  <div class="drow"><button class="ghost" id="adeny" autofocus>Don't use it</button><button class="primary" id="aallow">Allow</button></div>
+</dialog>
+
+<dialog id="keydlg">
+  <div class="dhead"><span id="ktitle">Add API key</span><button class="sbtn" id="kclose">Cancel</button></div>
+  <form class="dbody" id="kform">
+    <p id="kbody"></p>
+    <input class="keyin" id="kinput" type="password" autocomplete="off" spellcheck="false" placeholder="sk-…" aria-label="API key">
+    <div class="err" id="kerr"></div>
+    <p class="fine">The key stays on this computer, encrypted with your system keychain. It is never shown again, never added to chat history, and never sent to other AIs.</p>
+    <button class="primary" id="ksave">Save key</button>
+  </form>
+</dialog>
+
 <dialog id="packet">
   <div class="dhead"><span id="ptitle">Handoff packet</span><button class="sbtn" id="pclose">Close</button></div>
   <pre id="ptext"></pre>
@@ -217,8 +254,10 @@ $('#railclose').onclick = () => $('#app').classList.remove('railopen');
 
 const post = (path, body = {}) => fetch(path, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) }).then(r => r.json());
 const nameOf = id => S?.statuses.find(s => s.id === id)?.name ?? id;
-const avClass = id => id === 'codex' ? 'av codex' : 'av';
-const avChar = id => id === 'codex' ? '◎' : '✳';
+const isPaid = id => S?.statuses.find(s => s.id === id)?.billing === 'paid';
+const avClass = id => id === 'codex' ? 'av codex' : isPaid(id) ? 'av paid' : 'av';
+const avChar = id => id === 'codex' ? '◎' : isPaid(id) ? '◈' : '✳';
+const usd = n => n == null ? '?' : n < 0.01 ? `$${n.toFixed(4)}` : `$${n.toFixed(2)}`;
 const time = iso => new Date(iso).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
 
 function renderThread() {
@@ -228,7 +267,7 @@ function renderThread() {
     const e = el('div', 'empty');
     e.append(el('div', 'orb', '✳'), el('h1', null, S.project.name));
     e.append(el('p', null, S.mode === 'demo'
-      ? 'Send a message to the simulated Claude Code. Then tap “Make the next reply hit a limit” and watch Codex pick up the work.'
+      ? 'Send a message to the simulated Claude Code. Tap “Make the next reply hit a limit” to watch Codex take over. Do it again to see how Unify.js asks before using a paid AI.'
       : 'Messages go to your own Claude Code and Codex, in priority order. Context is saved after every step.'));
     t.append(e);
   }
@@ -270,6 +309,8 @@ function renderThread() {
         const c = el('span', 'chip', '⎇ snapshot ' + d.commit.slice(0, 7)); c.title = d.diffstat || 'Working tree saved';
         ((turn ?? lastTurn)?.chips ?? t).append(c); break;
       }
+      case 'usage': ((turn ?? lastTurn)?.chips ?? t).append(el('span', 'chip', `◈ ${usd(d.cost)} · ${(d.inputTokens + d.outputTokens).toLocaleString()} tokens`)); break;
+      case 'paid_approved': { const n = el('div', 'note'); n.append(el('strong', null, `◈ You approved ${nameOf(ev.provider)}`), el('br'), `Paid usage allowed up to ${usd(d.capUsd)} for this project. It stops at the cap and asks again.`); t.append(n); break; }
       case 'turn_end': turn = null; break;
     }
   }
@@ -282,16 +323,28 @@ function renderRail() {
     const row = el('div', 'prov');
     row.append(el('div', avClass(p.id), avChar(p.id)));
     const info = el('div', 'pinfo', `${i + 1}. ${p.name}`);
+    if (p.billing === 'paid') info.append(el('span', 'tagpaid', 'PAID'));
     const sm = el('small'); const dot = el('i', p.available ? '' : 'off'); sm.append(dot,
-      p.available ? (p.billing === 'paid' ? 'Ready · paid, asks first' : 'Ready · your subscription') :
+      p.available ? (p.billing === 'paid' ? (p.capUsd ? 'Approved' : 'Ready · asks before use') : 'Ready · your subscription') :
       (p.until ? `Resting until ${new Date(p.until).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}` : p.reason));
-    info.append(sm); row.append(info);
+    info.append(sm);
+    if (p.billing === 'paid') {
+      const pl = el('span', 'paidline');
+      pl.append('Spent ', el('b', null, usd(p.spend?.usd ?? 0)), p.capUsd ? ` of ${usd(p.capUsd)} cap` : ' · no approval yet');
+      if (p.chatOnly) pl.append(' · chat only');
+      if (p.capUsd) { const rv = el('button', 'link', ' · revoke'); rv.title = 'Require approval again'; rv.onclick = () => post('/api/revoke', { id: p.id }); pl.append(rv); }
+      if (p.keySource === 'secure storage') { const rk = el('button', 'link', ' · remove key'); rk.onclick = () => post('/api/keys', { provider: p.id, remove: true }); pl.append(rk); }
+      info.append(pl);
+    }
+    row.append(info);
     const btns = el('div', 'pbtns');
     const up = el('button', 'sbtn', '↑'); up.disabled = i === 0; up.ariaLabel = `Move ${p.name} up`;
     up.onclick = () => { const o = S.statuses.map(s => s.id); [o[i - 1], o[i]] = [o[i], o[i - 1]]; post('/api/priorities', { order: o }); };
     const pz = el('button', 'sbtn', p.available ? 'Pause' : 'Resume');
     pz.onclick = () => post(p.available ? '/api/pause' : '/api/resume', { id: p.id });
-    btns.append(up, pz); row.append(btns); box.append(row);
+    btns.append(up, pz);
+    if (p.billing === 'paid' && !p.available && p.reason === 'No API key added') { const k = el('button', 'sbtn', 'Add key'); k.onclick = () => openKey(p); btns.replaceChildren(up, k); }
+    row.append(btns); box.append(row);
   });
 
   const st = S.state, c = $('#ctx'); c.textContent = '';
@@ -323,7 +376,7 @@ function render() {
   $('#send').disabled = S.busy;
   const pill = $('#ctxpill'); pill.firstChild.className = 'statusdot' + (S.busy ? ' busy' : ''); pill.lastChild.textContent = S.busy ? 'Working · saving context' : 'Context saved';
   const sc = $('#scroll'); const atBottom = sc.scrollHeight - sc.scrollTop - sc.clientHeight < 80;
-  renderThread(); renderRail();
+  renderThread(); renderRail(); renderApproval();
   if (atBottom) sc.scrollTop = sc.scrollHeight;
 }
 
@@ -342,6 +395,33 @@ $('#form').onsubmit = async e => {
 $('#input').addEventListener('keydown', e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); $('#form').requestSubmit(); } });
 $('#simlimit').onclick = async () => { const next = S.statuses.find(s => s.available); await post('/api/demo/limit', { id: next?.id }); $('#simlimit').textContent = `✓ ${next?.name ?? 'Next AI'}'s next reply will hit a limit`; setTimeout(() => $('#simlimit').textContent = 'Make the next reply hit a limit', 4000); };
 $('#handoffnow').onclick = () => S.state.lastProvider && post('/api/pause', { id: S.state.lastProvider });
+
+let capChoice = 2, shownApproval = null;
+function renderApproval() {
+  const a = S.approval, d = $('#approve');
+  if (!a) { if (d.open) d.close(); shownApproval = null; return; }
+  if (shownApproval === a.id) return;
+  shownApproval = a.id;
+  const free = S.statuses.filter(s => s.billing !== 'paid').map(s => s.name).join(' and ');
+  $('#atitle').textContent = `Continue with ${a.name}?`;
+  $('#abody').textContent = `${free || 'Your subscription AIs'} can't continue right now. ${a.name} can pick up from the saved checkpoint, but it's billed per use to your own account${a.spentUsd ? ` (already spent ${usd(a.spentUsd)} on this project)` : ''}.`;
+  $('#aprice').textContent = a.pricePerMTok ? `Estimated price for ${a.model}: $${a.pricePerMTok.input} per million input tokens, $${a.pricePerMTok.output} per million output tokens. Check the provider's current pricing.` : 'Price unknown for this model.';
+  const caps = $('#caps'); caps.textContent = '';
+  for (const c of [0.5, 2, 5, 10]) { const b = el('button', c === capChoice ? 'on' : '', `$${c}`); b.type = 'button'; b.onclick = () => { capChoice = c; caps.querySelectorAll('button').forEach(x => x.classList.toggle('on', x === b)); $('#aallow').textContent = `Allow up to $${c}`; }; caps.append(b); }
+  $('#aallow').textContent = `Allow up to $${capChoice}`;
+  $('#aallow').onclick = () => { d.close(); post('/api/approve', { id: a.id, allow: true, capUsd: capChoice + (a.spentUsd || 0) }); };
+  $('#adeny').onclick = () => { d.close(); post('/api/approve', { id: a.id, allow: false }); };
+  d.oncancel = e => { e.preventDefault(); };
+  d.showModal();
+}
+function openKey(p) {
+  $('#ktitle').textContent = `Add ${p.name} key`; $('#kerr').textContent = ''; $('#kinput').value = '';
+  $('#kbody').textContent = p.canStoreKey ? `Paste the API key from your ${p.name.replace(' API', '')} account.` : `This version can't store keys securely. Set ${p.id.toUpperCase()}_API_KEY in your environment, or use the desktop app.`;
+  $('#kinput').hidden = $('#ksave').hidden = !p.canStoreKey;
+  $('#kform').onsubmit = async e => { e.preventDefault(); const r = await post('/api/keys', { provider: p.id, key: $('#kinput').value }); $('#kinput').value = ''; if (r.error) $('#kerr').textContent = r.error; else $('#keydlg').close(); };
+  $('#keydlg').showModal();
+}
+$('#kclose').onclick = () => { $('#kinput').value = ''; $('#keydlg').close(); };
 
 async function load() { S = await (await fetch('/api/state')).json(); render(); }
 const es = new EventSource('/api/stream');
