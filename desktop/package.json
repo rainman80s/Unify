@@ -6,7 +6,7 @@
   "description": "Unify.js Mac app",
   "main": "main.mjs",
   "scripts": {
-    "postinstall": "electron-rebuild -f -w better-sqlite3",
+    "postinstall": "node ensure-electron.mjs && electron-rebuild -f -w better-sqlite3",
     "start": "electron .",
     "dist:mac": "npm run bundle && electron-builder --mac",
     "bundle": "node bundle.mjs",
@@ -38,5 +38,10 @@
       ]
     },
     "publish": null
+  },
+  "allowScripts": {
+    "electron@37.2.0": true,
+    "better-sqlite3": false,
+    "electron-winstaller": false
   }
 }

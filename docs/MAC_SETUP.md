@@ -50,6 +50,11 @@ cd desktop
 npm install       # downloads Electron and rebuilds the database module for it
 npm start         # opens in demo mode
 ```
+Node 22 LTS is the smoothest choice for the desktop app. Newer Node (for example 26, which Homebrew's `node` installs) also
+works: `npm install` skips better-sqlite3's build for your system Node (the app only needs the Electron build, which the
+postinstall makes) and finishes unpacking Electron if its own installer stops partway. If `npm start` still says
+"Electron failed to install correctly", delete `desktop/node_modules` and run `npm install` again.
+
 Then use **File → Open Project Folder…** and pick a test folder first, because the AIs can edit files there.
 In **My AIs**, add NVIDIA and DeepSeek keys; the app stores them encrypted with your Keychain.
 
