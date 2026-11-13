@@ -2,7 +2,7 @@
 
 One workspace for many AIs. Its context engine keeps a ready-made handoff, so when one provider hits a limit, the next one continues the work.
 
-**Status:** engine, chat app, git snapshots, and an Electron desktop shell (M0–M2 plus early M5). It has not been built or signed on a Mac yet. `prototype/index.html` is the original visual concept.
+**Status:** engine, chat app, git snapshots, and an Electron desktop shell (M0–M2 plus early M5). Verified on macOS on Nov 13, 2026: Claude Code 2.1.323 and Codex 0.169.0 connect, resume their conversations, and complete a real Claude Code → Codex handoff (`npm run doctor -- --handoff`). The desktop app hasn't been built or signed on a Mac yet. `prototype/index.html` is the original visual concept.
 
 - `engine/src/db.js`: durable project state (Node's built-in SQLite): event log, checkpoints, priorities
 - `engine/src/context.js`: folds every event into structured state and renders the handoff packet. It never calls a model.
@@ -35,4 +35,4 @@ npm run dist:mac            # builds a .dmg (run on a Mac; unsigned until we add
 ## Real mode, first run on your Mac
 1. Install and sign in to Claude Code (`claude`) and Codex (`codex`) yourself. Unify.js never sees those logins.
 2. `UNIFY_CWD=/path/to/a/test/repo npm run start:real`. Use a throwaway repo first: both agents can edit files there.
-3. Real-mode parsing of each CLI's JSON output is based on their documented formats and has not yet been run against live CLIs. Expect small fixes.
+3. Run `npm run doctor -- --handoff` after updating either CLI. Their output formats can change, and the doctor saves the raw output so the parsers can be fixed.
