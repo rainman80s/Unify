@@ -12,6 +12,7 @@
     "demo": "node engine/demo.js",
     "start": "node app/server.js",
     "start:real": "UNIFY_MODE=real node app/server.js",
-    "doctor": "node scripts/doctor.mjs"
+    "doctor": "node scripts/doctor.mjs",
+    "deploy:site": "npx --yes wrangler@4 deploy"
   }
 }

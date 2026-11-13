@@ -1,3 +1,10 @@
 node_modules/
 *.db
 .unify-data/
+
+# wrangler files
+.wrangler
+.dev.vars*
+!.dev.vars.example
+.env*
+!.env.example

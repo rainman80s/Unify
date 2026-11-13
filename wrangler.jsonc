@@ -1,0 +1,7 @@
+// Cloudflare (Workers static assets, the current form of Pages) config for the download page in site/.
+// Deploy: npm run deploy:site   (needs `npx wrangler@4 login` once)
+{
+  "name": "unify-js",
+  "compatibility_date": "2026-11-13",
+  "assets": { "directory": "site" }
+}
