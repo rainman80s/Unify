@@ -203,6 +203,7 @@ const server = http.createServer(async (req, res) => {
         // passed explicitly, so this can't affect your other accounts.
         if (a.configDir && (await a.account({ fresh: true }))?.loggedIn) await a.signOut().catch(() => {});
         await rm(join(accountsDir, acc.id), { recursive: true, force: true });
+        await rm(join(accountsDir, `sign-in-${acc.id.replace(/[^\w-]/g, '_')}.command`), { force: true });
         db.setSetting('accounts', extraAccounts().filter(x => x.id !== acc.id));
         adapters.splice(adapters.indexOf(a), 1); router.removeAdapter(a.id);
         db.raw.prepare('DELETE FROM priorities WHERE provider = ?').run(a.id); break;
