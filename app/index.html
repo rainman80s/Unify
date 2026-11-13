@@ -92,6 +92,12 @@ button{cursor:pointer}
 .addacct input{flex:1;min-width:140px}
 .addacct button{width:auto}
 .aicard.off{opacity:.7}
+.step{display:grid;grid-template-columns:22px 1fr auto;gap:10px;align-items:center;padding:10px 0;border-top:1px solid var(--line);font-size:12.5px}
+.step:first-of-type{border-top:0}
+.step .ok{color:var(--ok);font-weight:700}.step .todo{color:var(--muted)}
+.step small{display:block;color:var(--muted);font-size:11.5px;margin-top:2px;line-height:1.5}
+.step button{width:auto;white-space:nowrap}
+.setupfoot{display:flex;gap:10px;justify-content:flex-end;margin-top:14px}.setupfoot button{width:auto}
 .aicard code.cmd{display:block;white-space:pre-wrap;word-break:break-all;background:var(--soft);border:1px solid var(--line);border-radius:8px;padding:8px;margin-top:6px;font-size:11px}
 .cat{margin-top:12px;border-top:1px solid var(--line);padding-top:12px}
 .cat input{width:100%;border:1px solid var(--line);background:var(--soft);border-radius:9px;padding:8px 10px;font-size:13px}
@@ -184,6 +190,7 @@ body.desktop:not(.mac){background:var(--bg)}
 <div class="app" id="app">
   <aside class="side">
     <div class="brand"><div class="logo">✳</div>unify<small>.js</small></div>
+    <button class="navitem" data-view="setup">◌ &nbsp;Get started</button>
     <button class="navitem active" data-view="chat">▧ &nbsp;Workspace</button>
     <button class="navitem" data-view="ais">✳ &nbsp;My AIs</button>
     <button class="navitem" data-open="packet">◉ &nbsp;Handoff packet</button>
@@ -399,6 +406,71 @@ function renderRail() {
 }
 
 let renaming = null; const signinMsg = {};
+// ---- Get started (first run) ----
+let setupInfo = null, setupLoading = false; const setupTests = {}, setupMsg = {};
+async function loadSetup() {
+  if (setupLoading) return; setupLoading = true;
+  try { setupInfo = await (await fetch('/api/setup')).json(); } finally { setupLoading = false; }
+  if (view === 'setup') render();
+}
+function renderSetup() {
+  const t = $('#thread'); t.textContent = '';
+  const page = el('div', 'aipage');
+  page.append(el('h1', null, 'Get started'), el('p', null, 'Unify.js uses the Claude Code and Codex apps on this computer, signed in with your own accounts. You need at least one; with both, when one hits its limit the other carries on. Anything that installs or signs in opens in Terminal, so you can see exactly what runs.'));
+  if (!setupInfo) { page.append(el('p', null, 'Checking this computer…')); t.append(page); loadSetup(); return; }
+  for (const c of setupInfo.clis) {
+    const card = el('div', 'aicard');
+    const head = el('div', 'aihead'); head.append(el('div', avClass(c.id), avChar(c.id)), el('h3', null, c.name));
+    card.append(head);
+    const step = (done, title, detail, action) => {
+      const r = el('div', 'step'); r.append(el('span', done ? 'ok' : 'todo', done ? '✓' : '○'));
+      const d = el('div', null, title); if (detail) d.append(el('small', null, detail)); r.append(d, action ?? el('span')); card.append(r);
+    };
+    const btn = (label, fn, primary) => { const b = el('button', primary ? 'primary' : 'ghost', label); b.onclick = fn; return b; };
+    const msg = setupMsg[c.id];
+    // 1. Installed
+    if (c.version) step(true, 'Installed', c.version);
+    else step(false, 'Install', c.install ? `Uses ${c.install.command.startsWith('curl') ? 'the official installer' : c.install.command.split(' ')[0]}: ${c.install.command}` : `Follow the instructions at ${c.help}`,
+      c.install ? btn('Install', async () => { const r = await post('/api/setup/install', { kind: c.kind });
+        setupMsg[c.id] = r.opened ? 'Terminal opened with the installer. This page updates by itself when it finishes.' : r.error ?? `Run this in a terminal: ${r.command}`; render(); }, true)
+        : btn('Open instructions', () => window.open(c.help)));
+    // 2. Signed in
+    const signed = c.account?.loggedIn;
+    step(!!signed, signed ? 'Signed in' : 'Sign in', signed ? [c.account.email, c.account.plan && `${c.account.plan[0].toUpperCase()}${c.account.plan.slice(1)} plan`].filter(Boolean).join(' · ') || null
+      : `With your own ${c.kind === 'codex' ? 'ChatGPT' : 'Claude'} account. Unify.js never sees your login.`,
+      c.version && !signed ? btn('Sign in', async () => { const r = await post('/api/accounts/signin', { id: c.id });
+        setupMsg[c.id] = r.opened ? 'Terminal opened with the sign-in (a browser window may open too). This page updates by itself when you\'re done.' : r.error ?? `Run this in a terminal: ${r.command}`; render(); }, true) : null);
+    // 3. Test
+    const tr = setupTests[c.id];
+    step(!!tr?.result?.ok, tr?.result?.ok ? 'Replies' : 'Test it', tr?.running ? 'Sending one tiny message…' : tr?.result ? (tr.result.ok ? `Answered in ${tr.result.secs}s` : tr.result.error) : 'Sends one tiny message, using a little of your plan.',
+      c.version && signed ? btn(tr?.result ? 'Test again' : 'Test', async () => { setupTests[c.id] = { running: true }; render();
+        setupTests[c.id] = { result: await post('/api/setup/test', { id: c.id }) }; render(); }) : null);
+    if (msg) card.append(el('div', 'line', msg));
+    page.append(card);
+  }
+  // Project folder
+  const pc = el('div', 'aicard'); pc.append(el('h3', null, 'Pick a project folder'));
+  const fr = el('div', 'step'); fr.append(el('span', setupInfo.folder ? 'ok' : 'todo', setupInfo.folder ? '✓' : '○'));
+  const fd = el('div', null, setupInfo.folder ? 'Working in' : 'Choose the folder the AIs work in');
+  fd.append(el('small', null, setupInfo.folder ?? 'They can read and edit files there. Try a throwaway folder first. Until then, the app runs in demo mode with simulated AIs.'));
+  fr.append(fd);
+  if (window.unifyDesktop) { const b = el('button', setupInfo.folder ? 'ghost' : 'primary', setupInfo.folder ? 'Change…' : 'Choose folder…'); b.onclick = () => unifyDesktop.openFolder(); fr.append(b); }
+  else fr.append(el('small', null, 'Browser version: start with UNIFY_CWD=/path/to/folder npm run start:real'));
+  pc.append(fr); page.append(pc);
+  // Optional
+  const oc = el('div', 'aicard'); oc.append(el('h3', null, 'Optional: a free extra AI'));
+  const or = el('div', 'step'); or.append(el('span', 'todo', '+'));
+  const od = el('div', null, 'NVIDIA API catalog (free trial)'); od.append(el('small', null, 'Chat-only backup when your subscriptions are resting. Needs a free key from build.nvidia.com.'));
+  const ob = el('button', 'ghost', 'Set up in My AIs'); ob.onclick = () => { view = 'ais'; render(); };
+  or.append(od, ob); oc.append(or); page.append(oc);
+  const ready = setupInfo.clis.some(c => c.account?.loggedIn);
+  const foot = el('div', 'setupfoot');
+  const skip = el('button', 'ghost', 'Skip for now'); skip.onclick = async () => { await post('/api/setup/done', { done: true }); view = 'chat'; render(); };
+  const done = el('button', 'primary', ready ? 'Start working →' : 'Sign in to at least one AI first'); done.disabled = !ready;
+  done.onclick = async () => { await post('/api/setup/done', { done: true }); view = 'chat'; render(); };
+  foot.append(skip, done); page.append(foot);
+  t.append(page);
+}
 async function signIn(p) {
   const r = await post('/api/accounts/signin', { id: p.id });
   signinMsg[p.id] = r.error ? { text: r.error }
@@ -407,7 +479,7 @@ async function signIn(p) {
   view = 'ais'; render();
 }
 let view = 'chat', catalog = { provider: null, models: null, error: null, q: '', loading: false };
-document.querySelectorAll('[data-view]').forEach(b => b.onclick = () => { view = b.dataset.view; $('#app').classList.remove('railopen'); render(); $('#scroll').scrollTop = 0; });
+document.querySelectorAll('[data-view]').forEach(b => b.onclick = () => { view = b.dataset.view; if (view === 'setup') loadSetup(); $('#app').classList.remove('railopen'); render(); $('#scroll').scrollTop = 0; });
 
 async function loadCatalog(id, refresh) {
   catalog = { ...catalog, provider: id, loading: true, error: null };
@@ -515,8 +587,8 @@ function render() {
   const sc = $('#scroll'); const atBottom = sc.scrollHeight - sc.scrollTop - sc.clientHeight < 80;
   document.querySelectorAll('.navitem[data-view]').forEach(b => b.classList.toggle('active', b.dataset.view === view));
   $('.composerwrap').hidden = view !== 'chat';
-  $('#crumb').textContent = view === 'ais' ? 'My AIs' : S.project.name;
-  if (view === 'ais') renderAIs(); else renderThread();
+  $('#crumb').textContent = view === 'ais' ? 'My AIs' : view === 'setup' ? 'Get started' : S.project.name;
+  if (view === 'ais') renderAIs(); else if (view === 'setup') renderSetup(); else renderThread();
   renderRail(); renderApproval();
   if (atBottom) sc.scrollTop = sc.scrollHeight;
 }
@@ -564,12 +636,13 @@ function openKey(p) {
 }
 $('#kclose').onclick = () => { $('#kinput').value = ''; $('#keydlg').close(); };
 
-async function load() { S = await (await fetch('/api/state')).json(); render(); }
+let firstLoad = true;
+async function load() { S = await (await fetch('/api/state')).json(); if (firstLoad && !S.setupDone) view = 'setup'; firstLoad = false; render(); }
 const es = new EventSource('/api/stream');
 let pending = false;
 es.onmessage = m => {
   const msg = JSON.parse(m.data);
-  if (msg.kind === 'snapshot') { S = msg; render(); return; }
+  if (msg.kind === 'snapshot') { S = msg; if (view === 'setup') loadSetup(); render(); return; }
   if (msg.kind === 'event' && S) {
     S.events.push({ ...msg.event, data: msg.event.data, at: new Date().toISOString() });
     if (!pending && view === 'chat') { pending = true; requestAnimationFrame(() => { pending = false; render(); }); }

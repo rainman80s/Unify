@@ -30,8 +30,9 @@ See `docs/PLAN.md` for the roadmap and `docs/HANDOFF.md` for the original brief.
 ```sh
 cd desktop && npm install   # also rebuilds better-sqlite3 for Electron (Electron has no node:sqlite)
 npm start                   # opens in demo mode; File > Open Project Folder… for real mode
-npm run dist:mac            # builds a .dmg (run on a Mac; unsigned until we add a Developer ID)
+npm run dist:mac            # builds .dmg files for Apple Silicon and Intel (ad-hoc signed until we add a Developer ID)
 ```
+On first launch the app shows **Get started**: it checks for Claude Code and Codex, installs them with their official installers and opens each sign-in (both in Terminal, so you see what runs), sends a tiny test message, and asks for a project folder. See `docs/MAC_SETUP.md` for the first-open steps on macOS.
 
 ## Real mode, first run on your Mac
 1. Install and sign in to Claude Code (`claude`) and Codex (`codex`) yourself. Unify.js never sees those logins.

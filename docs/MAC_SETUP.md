@@ -1,5 +1,17 @@
 # Running Unify.js on your Mac
 
+## Easiest: install the app
+1. Download the .dmg: `Unify.js-<version>-arm64.dmg` for Apple Silicon (M1 or newer), `Unify.js-<version>.dmg` for Intel Macs.
+   (To build them yourself: `cd desktop && npm install && npm run dist:mac`; they land in `desktop/dist/`.)
+2. Open it and drag **Unify.js** into **Applications**.
+3. The first time, macOS blocks it because it isn't signed with an Apple Developer ID yet. Double-click it once, choose
+   **Done**, then open **System Settings → Privacy & Security**, scroll down, and click **Open Anyway** next to Unify.js.
+   You only do this once.
+4. The **Get started** screen checks for Claude Code and Codex, installs them if needed (in Terminal, with their official
+   installers), opens each sign-in, and sends a tiny test message. Then pick a project folder.
+
+The rest of this page is for running from source (developers, or to try unreleased changes).
+
 About 15 minutes. Everything runs locally; nothing here costs money unless you choose the `--paid` test.
 
 ## 1. Tools (one time)

@@ -12,6 +12,8 @@ import { openDb, createRouter, refreshCheckpoint, renderHandoffPacket, claudeCod
 import { randomUUID } from 'node:crypto';
 import { createSecretStore } from './secrets.js';
 import { demoAdapters } from './demo-adapters.js';
+import { refreshPath, installCommand, INSTALL_HELP, openInTerminal, cliVersion, testReply, shq } from './setup.js';
+import { readFileSync, writeFileSync } from 'node:fs';
 
 const here = dirname(fileURLToPath(import.meta.url));
 
@@ -58,8 +60,21 @@ const adapters = demo ? demo.adapters : [
   defaultCli('codex'), ...extraAccounts().filter(a => a.kind === 'codex').map(extraCli),
   nvidiaAdapter({ getKey: () => keys.get('nvidia'), getModel: getModel('nvidia') }),
   deepseekAdapter({ getKey: () => keys.get('deepseek') })];
-const shq = v => `'${String(v).replace(/'/g, `'\\''`)}'`; // single-quote for a shell script
-const signInWatch = new Map(); // providerId -> interval while waiting for a Terminal sign-in to finish
+const signInWatch = new Map(); // providerId -> interval while waiting for a Terminal sign-in / install to finish
+refreshPath(); // find claude/codex even when the app was opened from Finder
+// First-run setup works in demo mode too (it's the first thing people see), so it uses the real CLIs, not the simulated ones.
+const setupCli = { 'claude-code': demo ? claudeCodeAdapter() : adapters.find(a => a.id === 'claude-code'),
+  codex: demo ? codexAdapter() : adapters.find(a => a.id === 'codex') };
+const cliById = id => adapters.find(a => a.id === id && a.signIn) ?? setupCli[id] ?? null;
+// Kept in a file, not the database, because demo mode's database lives in memory.
+const setupFile = join(dataDir, 'setup.json');
+const setupDone = () => { try { return !!JSON.parse(readFileSync(setupFile, 'utf8')).done; } catch { return false; } };
+function watchUntil(key, check, ms = 10 * 60_000) {
+  clearInterval(signInWatch.get(key)); const started = Date.now();
+  signInWatch.set(key, setInterval(async () => {
+    if ((await check().catch(() => false)) || Date.now() - started > ms) { clearInterval(signInWatch.get(key)); signInWatch.delete(key); await pushSnapshot(); }
+  }, 3000));
+}
 const catalogCache = new Map(); // providerId -> { at, models }
 // Projects created before a provider existed: add it at the end of the order (paid ones still need approval to run).
 { const order = db.priorities(PROJECT); const missing = adapters.map(a => a.id).filter(id => !order.includes(id)); if (missing.length) db.setPriorities(PROJECT, [...order, ...missing]); }
@@ -96,7 +111,7 @@ async function snapshot() {
       chatOnly: !!a.chatOnly, model: a.model, note: a.note ?? null, pricePerMTok: a.pricePerMTok ?? null, hasCatalog: typeof a.listModels === 'function' });
   }
   const approval = pending && (({ resolve, ...p }) => p)(pending);
-  return { mode: MODE, busy, approval, project: db.getProject(PROJECT), state, statuses, packet,
+  return { mode: MODE, busy, approval, setupDone: setupDone(), project: db.getProject(PROJECT), state, statuses, packet,
     preview: renderHandoffPacket(state, { from: from ?? 'the previous model', to: next?.name ?? 'the next model' }),
     events: db.events(PROJECT) };
 }
@@ -123,6 +138,16 @@ const server = http.createServer(async (req, res) => {
       if (hit && Date.now() - hit.at < 10 * 60_000 && !url.searchParams.has('refresh')) return json(res, 200, { models: hit.models, cached: true });
       try { const models = await a.listModels(); catalogCache.set(a.id, { at: Date.now(), models }); return json(res, 200, { models }); }
       catch (e) { return json(res, 502, { error: e.message }); }
+    }
+    if (req.method === 'GET' && url.pathname === '/api/setup') {
+      refreshPath();
+      const clis = await Promise.all(Object.entries(setupCli).map(async ([kind, a]) => {
+        const version = await cliVersion(a.signIn.cmd);
+        if (version) a.forgetAccount();
+        return { id: a.id, kind, name: KINDS[kind].name, version, account: version ? await a.account() : null,
+          install: installCommand(kind), help: INSTALL_HELP[kind] };
+      }));
+      return json(res, 200, { mode: MODE, platform: process.platform, folder: MODE === 'real' ? CWD : null, done: setupDone(), clis });
     }
     if (req.method === 'GET' && url.pathname === '/api/stream') {
       res.writeHead(200, { 'content-type': 'text/event-stream', 'cache-control': 'no-cache', connection: 'keep-alive' });
@@ -209,32 +234,30 @@ const server = http.createServer(async (req, res) => {
         db.raw.prepare('DELETE FROM priorities WHERE provider = ?').run(a.id); break;
       }
       case '/api/accounts/signin': {
-        const a = adapters.find(x => x.id === body.id && x.signIn);
-        if (!a) return json(res, 400, { error: demo ? 'Open a project folder to sign in (demo mode uses simulated AIs).' : 'Unknown account' });
+        const a = cliById(body.id);
+        if (!a) return json(res, 400, { error: 'Unknown account' });
         const { cmd, args, env } = a.signIn;
         const command = [...Object.entries(env).map(([k, v]) => `${k}=${shq(v)}`), cmd, ...args].join(' ');
-        let opened = false;
-        if (process.platform === 'darwin') {
-          // Open Terminal with the real sign-in command. The script holds no secrets: only which folder this account uses.
-          await mkdir(accountsDir, { recursive: true, mode: 0o700 });
-          const file = join(accountsDir, `sign-in-${a.id.replace(/[^\w-]/g, '_')}.command`);
-          await writeFile(file, ['#!/bin/zsh -l', ...Object.entries(env).map(([k, v]) => `export ${k}=${shq(v)}`),
-            `echo ${shq(`Signing in: ${a.name}`)}`, `echo`, [cmd, ...args].map(shq).join(' '),
-            `echo; echo 'Done. You can close this window and go back to Unify.js.'`].join('\n') + '\n', { mode: 0o700 });
-          opened = await new Promise(r => execFile('open', [file], e => r(!e)));
-        }
-        // Watch for the sign-in to finish, then refresh the app (up to 10 minutes).
-        clearInterval(signInWatch.get(a.id));
-        const started = Date.now();
-        signInWatch.set(a.id, setInterval(async () => {
-          const acc = await a.account?.({ fresh: true });
-          if (acc?.loggedIn || Date.now() - started > 10 * 60_000) { clearInterval(signInWatch.get(a.id)); signInWatch.delete(a.id); await pushSnapshot(); }
-        }, 3000));
+        const opened = await openInTerminal({ dir: accountsDir, name: `sign-in-${a.id}`, title: `Signing in: ${a.name}`, env,
+          lines: [[cmd, ...args].map(shq).join(' ')] });
+        watchUntil(a.id, async () => (await a.account?.({ fresh: true }))?.loggedIn);
         return json(res, 200, { ok: true, opened, command });
       }
       case '/api/accounts/check': {
         const a = adapters.find(x => x.id === body.id && x.account); if (a) { a.forgetAccount(); await a.account({ fresh: true }); } break;
       }
+      case '/api/setup/install': {
+        const a = setupCli[body.kind]; const inst = installCommand(body.kind);
+        if (!a || !inst) return json(res, 400, { error: 'No automatic installer here', help: INSTALL_HELP[body.kind] ?? null });
+        const opened = await openInTerminal({ dir: join(dataDir, 'setup'), name: `install-${body.kind}`, title: `Installing ${a.name} with ${inst.how}`, lines: [inst.command] });
+        watchUntil(`install:${body.kind}`, async () => { refreshPath(); return !!(await cliVersion(a.signIn.cmd)); });
+        return json(res, 200, { ok: true, opened, command: inst.command });
+      }
+      case '/api/setup/test': {
+        const a = cliById(body.id); if (!a) return json(res, 400, { error: 'Unknown AI' });
+        return json(res, 200, await testReply(a));
+      }
+      case '/api/setup/done': { await mkdir(dataDir, { recursive: true }); writeFileSync(setupFile, JSON.stringify({ done: !!body.done })); break; }
       case '/api/demo/limit': if (!demo) return json(res, 400, { error: 'demo only' }); demo.limitNext(body.id ?? 'claude-code'); break;
       default: return json(res, 404, { error: 'not found' });
     }

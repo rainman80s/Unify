@@ -34,14 +34,23 @@
     "mac": {
       "category": "public.app-category.developer-tools",
       "target": [
-        "dmg"
-      ]
+        {
+          "target": "dmg",
+          "arch": [
+            "arm64",
+            "x64"
+          ]
+        }
+      ],
+      "identity": null
     },
-    "publish": null
+    "publish": null,
+    "afterPack": "./adhoc-sign.cjs"
   },
   "allowScripts": {
     "electron@37.2.0": true,
     "better-sqlite3": false,
     "electron-winstaller": false
-  }
+  },
+  "author": "Unify.js"
 }
