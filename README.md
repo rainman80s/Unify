@@ -32,6 +32,8 @@ cd desktop && npm install   # also rebuilds better-sqlite3 for Electron (Electro
 npm start                   # opens in demo mode; File > Open Project Folder… for real mode
 npm run dist:mac            # builds .dmg files for Apple Silicon and Intel (signed with the self-signed release certificate if present, else ad-hoc; see desktop/mac-sign.cjs)
 ```
+**Download page:** `site/` is a static page (Cloudflare Pages) whose buttons link to `releases/latest/download/Unify.js-mac-arm64.dmg` / `-x64.dmg`, so it never needs redeploying for a new release.
+
 **Releasing:** bump `version` in `desktop/package.json`, commit to `main`, then `cd desktop && npm run release`. It builds both .dmg files and publishes a GitHub Release; installed apps show "Update available" (they can't update themselves until the app is signed).
 
 On first launch the app shows **Get started**: it checks for Claude Code and Codex, installs them with their official installers and opens each sign-in (both in Terminal, so you see what runs), sends a tiny test message, and asks for a project folder. See `docs/MAC_SETUP.md` for the first-open steps on macOS.

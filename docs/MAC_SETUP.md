@@ -1,7 +1,7 @@
 # Running Unify.js on your Mac
 
 ## Easiest: install the app
-1. Download the .dmg from https://github.com/rainman80s/Unify/releases/latest: `Unify.js-<version>-arm64.dmg` for Apple Silicon (M1 or newer), `Unify.js-<version>.dmg` for Intel Macs.
+1. Download the .dmg from https://github.com/rainman80s/Unify/releases/latest: `Unify.js-mac-arm64.dmg` for Apple Silicon (M1 or newer), `Unify.js-mac-x64.dmg` for Intel Macs.
    (To build them yourself: `cd desktop && npm install && npm run dist:mac`; they land in `desktop/dist/`.)
 2. Open it and drag **Unify.js** into **Applications**.
 3. The first time, macOS blocks it because it isn't signed with an Apple Developer ID yet. Double-click it once, choose

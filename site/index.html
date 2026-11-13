@@ -1,0 +1,99 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Unify.js — one workspace for many AIs</title>
+<meta name="description" content="Unify.js keeps your work moving across Claude Code, Codex and more. When one AI hits its limit, the next one picks up where it left off. Free download for Mac.">
+<link rel="icon" href="favicon.png">
+<meta property="og:title" content="Unify.js">
+<meta property="og:description" content="One workspace for many AIs. When one hits its limit, the next one continues the work.">
+<meta property="og:image" content="icon.png">
+<style>
+:root{
+  --bg:#ececf1; --glow1:#d9d4f1; --glow2:#ded9ec; --card:#ffffffcc; --line:#e6e4ec; --ink:#171822; --muted:#6f6e7a;
+  --accent:#6e5de7; --accent-ink:#5a4bd0; --soft:#f4f3f8; --btn-ink:#fff;
+  color-scheme:light;
+}
+@media (prefers-color-scheme:dark){:root{
+  --bg:#1c1b22; --glow1:#2e2847; --glow2:#272238; --card:#25242dcc; --line:#3a3944; --ink:#f0eff6; --muted:#a3a2ad;
+  --accent:#8f80f5; --accent-ink:#b9afff; --soft:#2d2c36; color-scheme:dark;
+}}
+*{box-sizing:border-box}
+body{margin:0;min-height:100vh;font-family:Inter,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;color:var(--ink);line-height:1.55;
+  background:radial-gradient(circle at 14% 4%,var(--glow1) 0,transparent 38%),radial-gradient(circle at 92% 96%,var(--glow2) 0,transparent 38%),var(--bg)}
+main{max-width:720px;margin:0 auto;padding:64px 16px 40px}
+.hero{text-align:center}
+.icon{width:112px;height:112px;display:block;margin:0 auto 18px}
+h1{font-size:44px;letter-spacing:-1.6px;margin:0 0 8px;line-height:1.1}
+h1 small{font-size:.5em;color:var(--muted);letter-spacing:-.5px;font-weight:600}
+.tag{font-size:18px;color:var(--muted);max-width:520px;margin:0 auto}
+.dl{margin:32px 0 10px;display:flex;flex-direction:column;align-items:center;gap:10px}
+.btn{display:inline-flex;align-items:center;gap:10px;background:linear-gradient(135deg,#a799ff,#5c4bd5);color:var(--btn-ink);text-decoration:none;
+  font-weight:650;font-size:17px;padding:14px 26px;border-radius:14px;box-shadow:0 10px 28px #5c4bd544}
+.btn:hover{filter:brightness(1.06)}.btn:focus-visible{outline:3px solid #b1a8ff;outline-offset:3px}
+.btn svg{width:20px;height:20px;fill:currentColor}
+.sub{font-size:13px;color:var(--muted)}
+.sub a{color:var(--accent-ink)}
+.card{background:var(--card);border:1px solid var(--line);border-radius:18px;padding:22px 24px;margin-top:22px;backdrop-filter:blur(20px)}
+.card h2{font-size:16px;margin:0 0 12px;letter-spacing:-.2px}
+ol,ul{margin:0;padding-left:20px}li{margin:6px 0}
+.card p{margin:0;color:var(--muted);font-size:14.5px}
+li{font-size:14.5px}li b{color:var(--ink)}
+.muted{color:var(--muted)}
+kbd{font:12.5px ui-monospace,Menlo,monospace;background:var(--soft);border:1px solid var(--line);border-radius:6px;padding:1px 6px}
+footer{text-align:center;font-size:13px;color:var(--muted);margin-top:34px}
+footer a{color:var(--muted)}
+@media (max-width:520px){main{padding-top:40px}h1{font-size:36px}.tag{font-size:16px}.card{padding:18px}}
+</style>
+</head>
+<body>
+<main>
+  <section class="hero">
+    <img class="icon" src="icon.png" alt="" width="112" height="112">
+    <h1>Unify<small>.js</small></h1>
+    <p class="tag">One workspace for many AIs. When Claude Code hits its limit, Codex picks up exactly where it left off, and the other way round.</p>
+    <div class="dl">
+      <a class="btn" href="https://github.com/rainman80s/Unify/releases/latest/download/Unify.js-mac-arm64.dmg">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3a1 1 0 0 1 1 1v9.6l3.3-3.3a1 1 0 1 1 1.4 1.4l-5 5a1 1 0 0 1-1.4 0l-5-5a1 1 0 1 1 1.4-1.4L11 13.6V4a1 1 0 0 1 1-1zM5 19a1 1 0 0 1 1-1h12a1 1 0 1 1 0 2H6a1 1 0 0 1-1-1z"/></svg>
+        Download for Mac
+      </a>
+      <div class="sub">Apple Silicon (M1 or newer) · macOS 11 or later · Free<span id="ver"></span></div>
+      <div class="sub">Intel Mac? <a href="https://github.com/rainman80s/Unify/releases/latest/download/Unify.js-mac-x64.dmg">Download the Intel version</a>.
+        Not sure? Apple menu → About This Mac: “Chip: Apple M…” means Apple Silicon.</div>
+    </div>
+  </section>
+
+  <section class="card">
+    <h2>Install in a minute</h2>
+    <ol>
+      <li>Open the downloaded file and drag <b>Unify.js</b> into <b>Applications</b>.</li>
+      <li><b>First open only:</b> macOS blocks it because it isn't from the App Store or signed by a registered Apple developer yet. Double-click it, choose <b>Done</b>, then open <b>System Settings → Privacy &amp; Security</b>, scroll down and click <b>Open Anyway</b>.</li>
+      <li>The <b>Get started</b> screen installs Claude Code and Codex if you need them, signs you in with your own accounts, and checks everything works.</li>
+    </ol>
+  </section>
+
+  <section class="card">
+    <h2>What you need</h2>
+    <ul>
+      <li>A <b>Claude</b> plan (for Claude Code) and/or a <b>ChatGPT</b> plan (for Codex). One works; both is best.</li>
+      <li class="muted">Optional: a free NVIDIA API key as a backup when your plans are resting.</li>
+    </ul>
+  </section>
+
+  <section class="card">
+    <h2>Your accounts stay yours</h2>
+    <p>Unify.js runs on your Mac and drives the official Claude Code and Codex apps, signed in by you. It never sees your passwords, and your projects stay on your computer.</p>
+  </section>
+
+  <footer>
+    <a href="https://github.com/rainman80s/Unify">Source on GitHub</a> · <a href="https://github.com/rainman80s/Unify/releases">All versions</a>
+  </footer>
+</main>
+<script>
+// Show the current version. The download links work without this.
+fetch('https://api.github.com/repos/rainman80s/Unify/releases/latest').then(r => r.ok ? r.json() : null)
+  .then(j => { if (j && j.tag_name) document.getElementById('ver').textContent = ' · ' + j.tag_name; }).catch(() => {});
+</script>
+</body>
+</html>

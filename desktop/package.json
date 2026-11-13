@@ -46,7 +46,10 @@
       "identity": null
     },
     "publish": null,
-    "afterPack": "./mac-sign.cjs"
+    "afterPack": "./mac-sign.cjs",
+    "dmg": {
+      "artifactName": "Unify.js-mac-${arch}.dmg"
+    }
   },
   "allowScripts": {
     "electron@37.2.0": true,
