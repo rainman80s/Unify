@@ -13,6 +13,7 @@ One workspace for many AIs. Its context engine keeps a ready-made handoff, so wh
 - NVIDIA API catalog (`nvidiaAdapter`): free trial tier, rate-limited and for prototyping. No approval prompt and no cost, and a 429 only pauses it for about a minute. My AIs lists the live model catalog for your key, and you choose the model.
 - `desktop/`: Electron shell. It runs the server in-process, adds File → Open Project Folder… (switches to real mode for that folder), borrows your login-shell PATH so a Finder-launched app can find `claude`/`codex`, and uses macOS vibrancy and inset traffic lights.
 - `engine/src/adapters/`: Claude Code CLI, Codex CLI, and a scripted fake used for tests and the demo
+- Multiple accounts per AI: in My AIs, **Add another account** (e.g. a work Claude Code next to your personal one). Each extra account gets its own CLI config folder (`CLAUDE_CONFIG_DIR` / `CODEX_HOME`), so its sign-in stays separate; **Sign in** opens Terminal with the real `claude auth login` / `codex login`. Any AI can be switched off per project, so a work repo only uses your work account.
 
 ```sh
 npm start          # chat app at http://127.0.0.1:4317 with simulated Claude Code + Codex

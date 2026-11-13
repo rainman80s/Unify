@@ -3,7 +3,7 @@
 //   {"type":"thread.started","thread_id":"…"} {"type":"turn.started"} item.started / item.completed … turn.completed | turn.failed
 //   It also emits transient {"type":"error","message":"Reconnecting... 2/5 (…)"} lines while retrying, which are not fatal.
 // `codex exec resume` does NOT accept --sandbox / --cd, so a resumed turn sets the sandbox via -c and runs in cwd.
-import { spawnJsonLines, cliInstalled, looksLikeLimit } from './base.js';
+import { spawnJsonLines, cliInstalled, looksLikeLimit, runCli, accountCache } from './base.js';
 
 const AUTH = /401|unauthori[sz]ed|not logged in|please (log|sign) ?in|missing bearer/i;
 
@@ -38,15 +38,30 @@ export function codexArgs({ prompt, cwd, sessionId, sandbox = 'workspace-write' 
     : ['exec', '--json', '--skip-git-repo-check', '--sandbox', sandbox, ...(cwd ? ['--cd', cwd] : []), prompt];
 }
 
-export function codexAdapter({ bin = 'codex', sandbox = 'workspace-write' } = {}) {
+/** One Codex account. configDir (CODEX_HOME) gives it its own sign-in, config and sessions; null uses ~/.codex. */
+export function codexAdapter({ bin = 'codex', sandbox = 'workspace-write', id = 'codex', name = 'Codex', configDir = null } = {}) {
+  const env = configDir ? { CODEX_HOME: configDir } : {};
+  const account = accountCache(async () => {
+    const r = await runCli(bin, ['login', 'status'], { env });
+    const out = `${r.stdout}\n${r.stderr}`;
+    if (/not logged in/i.test(out)) return { loggedIn: false };
+    if (r.code === 0 && /logged in/i.test(out)) return { loggedIn: true, plan: /chatgpt/i.test(out) ? 'ChatGPT' : /api key/i.test(out) ? 'API key' : null };
+    return null; // can't tell
+  });
   return {
-    id: 'codex', name: 'Codex', billing: 'subscription',
+    id, name, kind: 'codex', billing: 'subscription', configDir,
+    account: opts => account.get(opts),
+    forgetAccount: () => account.clear(),
+    signIn: { cmd: bin, args: ['login'], env },
+    signOut: () => runCli(bin, ['logout'], { env }),
     async status() {
-      return (await cliInstalled(bin)) ? { available: true } : { available: false, reason: 'Codex CLI not installed' };
+      if (!(await cliInstalled(bin))) return { available: false, reason: 'Codex CLI not installed' };
+      const a = await account.get();
+      return a && !a.loggedIn ? { available: false, reason: 'Not signed in', needsSignIn: true } : { available: true };
     },
     async *run({ prompt, cwd, signal, sessionId }) {
       let finished = false;
-      for await (const item of spawnJsonLines(bin, codexArgs({ prompt, cwd, sessionId, sandbox }), { cwd, signal, rawLog: 'codex' })) {
+      for await (const item of spawnJsonLines(bin, codexArgs({ prompt, cwd, sessionId, sandbox }), { cwd, signal, env, rawLog: 'codex' })) {
         if (item.json) {
           for (const ev of parseCodexLine(item.json)) { if (['done', 'error', 'limit'].includes(ev.type)) finished = true; yield ev; }
         } else if (item.exit) {

@@ -1,7 +1,7 @@
 // Claude Code adapter: drives the user's own, already-signed-in `claude` CLI.
 // Unify.js never handles Claude credentials; billing is whatever the user's Claude Code uses.
 // Stream format: `claude -p --output-format stream-json --verbose`. Verify against the installed version.
-import { spawnJsonLines, cliInstalled, looksLikeLimit } from './base.js';
+import { spawnJsonLines, cliInstalled, looksLikeLimit, runCli, accountCache } from './base.js';
 
 const AUTH = /\/login|not logged in|invalid api key|unauthori[sz]ed|401/i;
 const NOT_SIGNED_IN = 'Claude Code is not signed in. Run `claude` in Terminal and log in, then try again.';
@@ -30,20 +30,38 @@ export function parseClaudeLine(msg) {
   return out;
 }
 
-export function claudeCodeAdapter({ bin = 'claude', permissionMode = 'acceptEdits' } = {}) {
+/**
+ * One Claude Code account. configDir (CLAUDE_CONFIG_DIR) gives an account its own sign-in, settings and sessions, so
+ * "Personal" and "Work" can both be signed in on one computer. null uses the CLI's normal folder (~/.claude).
+ */
+export function claudeCodeAdapter({ bin = 'claude', permissionMode = 'acceptEdits', id = 'claude-code', name = 'Claude Code', configDir = null } = {}) {
+  const env = configDir ? { CLAUDE_CONFIG_DIR: configDir } : {};
+  const account = accountCache(async () => {
+    const r = await runCli(bin, ['auth', 'status', '--json'], { env });
+    try { const j = JSON.parse(r.stdout); return { loggedIn: !!j.loggedIn, email: j.email ?? null, plan: j.subscriptionType ?? j.planTier ?? null }; }
+    catch { return null; } // older CLI without `auth status`: can't tell, so don't block it
+  });
   return {
-    id: 'claude-code', name: 'Claude Code', billing: 'subscription',
+    id, name, kind: 'claude-code', billing: 'subscription', configDir,
+    account: opts => account.get(opts),
+    forgetAccount: () => account.clear(),
+    /** The command a person runs (in Terminal) to sign this account in. */
+    signIn: { cmd: bin, args: ['auth', 'login'], env },
+    signOut: () => runCli(bin, ['auth', 'logout'], { env }),
     async status() {
-      return (await cliInstalled(bin)) ? { available: true } : { available: false, reason: 'Claude Code CLI not installed' };
+      if (!(await cliInstalled(bin))) return { available: false, reason: 'Claude Code CLI not installed' };
+      const a = await account.get();
+      return a && !a.loggedIn ? { available: false, reason: 'Not signed in', needsSignIn: true } : { available: true };
     },
     async *run({ prompt, cwd, signal, sessionId }) {
       const args = ['-p', prompt, '--output-format', 'stream-json', '--verbose', '--permission-mode', permissionMode, ...(sessionId ? ['--resume', sessionId] : [])];
       let finished = false;
-      for await (const item of spawnJsonLines(bin, args, { cwd, signal, rawLog: 'claude' })) {
+      for await (const item of spawnJsonLines(bin, args, { cwd, signal, env, rawLog: 'claude' })) {
         if (item.json) {
           for (const ev of parseClaudeLine(item.json)) { if (['done', 'error', 'limit'].includes(ev.type)) finished = true; yield ev; }
         } else if (item.exit && !finished) {
           const e = item.exit.stderr.trim();
+          if (AUTH.test(e)) account.clear();
           yield AUTH.test(e) ? { type: 'error', message: NOT_SIGNED_IN } : looksLikeLimit(e) ? { type: 'limit', reason: e }
             : { type: 'error', message: e || (item.exit.code ? `exit ${item.exit.code}` : 'Claude Code stopped without finishing its turn.') };
         }

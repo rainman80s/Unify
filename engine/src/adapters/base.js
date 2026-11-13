@@ -48,3 +48,30 @@ export async function cliInstalled(cmd) {
     c.on('close', code => res(code === 0));
   });
 }
+
+/** Run a CLI to completion (no shell) and return { code, stdout, stderr }. Used for quick checks like sign-in status. */
+export function runCli(cmd, args, { env, timeoutMs = 15_000 } = {}) {
+  return new Promise(res => {
+    let stdout = '', stderr = '';
+    const c = spawn(cmd, args, { env: { ...process.env, ...env }, stdio: ['ignore', 'pipe', 'pipe'], timeout: timeoutMs });
+    c.stdout.on('data', d => { stdout += d; }); c.stderr.on('data', d => { stderr += d; });
+    c.on('error', e => res({ code: -1, stdout, stderr: e.message }));
+    c.on('close', code => res({ code, stdout, stderr }));
+  });
+}
+
+/**
+ * Cached sign-in check for a CLI account. check() returns { loggedIn, email?, plan? } or null if it can't tell
+ * (e.g. an older CLI without a status command), in which case the account is treated as usable.
+ */
+export function accountCache(check, ttlMs = 20_000) {
+  let at = 0, value = null, inflight = null;
+  return {
+    async get({ fresh = false } = {}) {
+      if (!fresh && at && Date.now() - at < ttlMs) return value;
+      inflight ??= check().catch(() => null).then(v => { value = v; at = Date.now(); inflight = null; return v; });
+      return inflight;
+    },
+    clear() { at = 0; },
+  };
+}

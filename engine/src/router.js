@@ -7,6 +7,9 @@ import { refreshCheckpoint, renderHandoffPacket } from './context.js';
 
 export function createRouter({ db, adapters, approvePaid = async () => false, onEvent = () => {}, checkpointer = null }) {
   const byId = new Map(adapters.map(a => [a.id, a]));
+  // AIs switched off for one project (e.g. keep a work repo off a personal account). Stored per project in settings.
+  const offKey = projectId => `project.${projectId}.off`;
+  const isOff = (projectId, id) => (db.getSetting(offKey(projectId), []) ?? []).includes(id);
   const cooling = new Map(); // providerId -> retryAt (ms) after hitting a limit
   const approvals = new Map(); // `${projectId}:${providerId}` -> capUsd
 
@@ -29,7 +32,7 @@ export function createRouter({ db, adapters, approvePaid = async () => false, on
     const out = [];
     for (const id of order) {
       const a = byId.get(id);
-      if (!a || exclude.has(id)) continue;
+      if (!a || exclude.has(id) || isOff(projectId, id)) continue;
       if ((cooling.get(id) ?? 0) > Date.now()) continue;
       if (!(await a.status()).available) continue;
       out.push(a);
@@ -125,11 +128,22 @@ export function createRouter({ db, adapters, approvePaid = async () => false, on
     return Promise.all(db.priorities(projectId).map(async id => {
       const a = byId.get(id);
       if (!a) return { id, name: id, available: false, reason: 'not configured' };
+      if (isOff(projectId, id)) return { id, name: a.name, billing: a.billing, available: false, off: true, reason: 'Off for this project' };
       const until = cooling.get(id) ?? 0;
       if (until > Date.now()) return { id, name: a.name, billing: a.billing, available: false, reason: 'limit / paused', until };
       return { id, name: a.name, billing: a.billing, ...(await a.status()) };
     }));
   }
 
-  return { send, pause, resume, statuses, revokePaid, approvalFor: (projectId, id) => approvals.get(`${projectId}:${id}`) ?? null };
+  /** Switch an AI on or off for one project. */
+  function setEnabled(projectId, id, on) {
+    const off = new Set(db.getSetting(offKey(projectId), []) ?? []);
+    on ? off.delete(id) : off.add(id);
+    db.setSetting(offKey(projectId), [...off]);
+  }
+  /** Add or remove an AI while running (e.g. a second Claude Code account). */
+  function addAdapter(a) { byId.set(a.id, a); }
+  function removeAdapter(id) { byId.delete(id); cooling.delete(id); }
+
+  return { send, pause, resume, statuses, revokePaid, setEnabled, addAdapter, removeAdapter, approvalFor: (projectId, id) => approvals.get(`${projectId}:${id}`) ?? null };
 }

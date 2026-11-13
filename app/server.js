@@ -3,7 +3,8 @@
 //   UNIFY_MODE=real npm start  -> drives your installed, signed-in `claude` and `codex` CLIs in UNIFY_CWD
 // Also imported by the desktop app via startServer(). Binds to 127.0.0.1 only: never expose a server that can run coding agents.
 import http from 'node:http';
-import { readFile, mkdir } from 'node:fs/promises';
+import { readFile, mkdir, writeFile, rm } from 'node:fs/promises';
+import { execFile } from 'node:child_process';
 import { join, dirname, basename } from 'node:path';
 import { createHash } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
@@ -42,9 +43,23 @@ if (!db.getProject(PROJECT)) {
 const getModel = id => () => db.getSetting(`${id}.model`);
 const demo = MODE === 'demo' ? demoAdapters({ cwd: CWD, getModel }) : null;
 const keys = secrets ?? createSecretStore({ file: null });
-const adapters = demo ? demo.adapters : [claudeCodeAdapter(), codexAdapter(),
+
+// CLI accounts. The default Claude Code / Codex use the CLI's normal folder; each extra account (e.g. "Work") gets its own
+// config folder (CLAUDE_CONFIG_DIR / CODEX_HOME), so its sign-in, settings and sessions stay separate. Unify never sees the logins.
+const KINDS = { 'claude-code': { name: 'Claude Code', make: claudeCodeAdapter }, codex: { name: 'Codex', make: codexAdapter } };
+const accountsDir = join(dataDir, 'accounts');
+const extraAccounts = () => db.getSetting('accounts', []) ?? [];
+const displayName = (kind, label) => label ? `${KINDS[kind].name} · ${label}` : KINDS[kind].name;
+const cliAdapter = ({ id, kind, label, configDir = null }) => KINDS[kind].make({ id, name: displayName(kind, label), configDir });
+const defaultCli = kind => cliAdapter({ id: kind, kind, label: db.getSetting(`label.${kind}`, null) });
+const extraCli = acc => cliAdapter({ ...acc, configDir: join(accountsDir, acc.id) });
+const adapters = demo ? demo.adapters : [
+  defaultCli('claude-code'), ...extraAccounts().filter(a => a.kind === 'claude-code').map(extraCli),
+  defaultCli('codex'), ...extraAccounts().filter(a => a.kind === 'codex').map(extraCli),
   nvidiaAdapter({ getKey: () => keys.get('nvidia'), getModel: getModel('nvidia') }),
   deepseekAdapter({ getKey: () => keys.get('deepseek') })];
+const shq = v => `'${String(v).replace(/'/g, `'\\''`)}'`; // single-quote for a shell script
+const signInWatch = new Map(); // providerId -> interval while waiting for a Terminal sign-in to finish
 const catalogCache = new Map(); // providerId -> { at, models }
 // Projects created before a provider existed: add it at the end of the order (paid ones still need approval to run).
 { const order = db.priorities(PROJECT); const missing = adapters.map(a => a.id).filter(id => !order.includes(id)); if (missing.length) db.setPriorities(PROJECT, [...order, ...missing]); }
@@ -75,6 +90,8 @@ async function snapshot() {
   for (const s of statuses) {
     const a = adapters.find(x => x.id === s.id);
     if (a?.billing === 'paid') Object.assign(s, { capUsd: router.approvalFor(PROJECT, s.id), spend: state.spend[s.id] ?? null });
+    if (a?.kind) Object.assign(s, { kind: a.kind, extra: extraAccounts().some(x => x.id === a.id),
+      label: extraAccounts().find(x => x.id === a.id)?.label ?? db.getSetting(`label.${a.id}`, null), account: await a.account?.() ?? null });
     if (a?.needsKey) Object.assign(s, { needsKey: true, keySource: demo ? 'demo' : await keys.source(s.id), canStoreKey: keys.canStore,
       chatOnly: !!a.chatOnly, model: a.model, note: a.note ?? null, pricePerMTok: a.pricePerMTok ?? null, hasCatalog: typeof a.listModels === 'function' });
   }
@@ -149,6 +166,74 @@ const server = http.createServer(async (req, res) => {
         catch (e) { return json(res, 400, { error: e.message }); }
         break;
       }
+      case '/api/project-ai': {
+        if (!adapters.some(a => a.id === body.id)) return json(res, 400, { error: 'Unknown AI' });
+        router.setEnabled(PROJECT, body.id, !!body.on); break;
+      }
+      case '/api/accounts/add': {
+        if (demo) return json(res, 400, { error: 'Open a project folder to add accounts (demo mode uses simulated AIs).' });
+        const kind = String(body.kind ?? ''), label = String(body.label ?? '').trim().slice(0, 40);
+        if (!KINDS[kind] || !label) return json(res, 400, { error: 'Choose Claude Code or Codex and give the account a name, like "Work".' });
+        const base = `${kind}@${label.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') || 'account'}`;
+        let id = base; for (let n = 2; adapters.some(a => a.id === id); n++) id = `${base}-${n}`;
+        const acc = { id, kind, label };
+        await mkdir(join(accountsDir, id), { recursive: true, mode: 0o700 });
+        db.setSetting('accounts', [...extraAccounts(), acc]);
+        const a = extraCli(acc);
+        const lastOfKind = adapters.findLastIndex(x => x.kind === kind);
+        adapters.splice(lastOfKind + 1, 0, a); router.addAdapter(a);
+        const order = db.priorities(PROJECT); const after = order.findLastIndex(p => adapters.find(x => x.id === p)?.kind === kind);
+        order.splice(after + 1, 0, id); db.setPriorities(PROJECT, order);
+        json(res, 200, { ok: true, id }); await pushSnapshot(); return;
+      }
+      case '/api/accounts/rename': {
+        const a = adapters.find(x => x.id === body.id && x.kind); const label = String(body.label ?? '').trim().slice(0, 40);
+        if (!a) return json(res, 400, { error: 'Unknown account' });
+        const accs = extraAccounts(), i = accs.findIndex(x => x.id === a.id);
+        if (i >= 0) { if (!label) return json(res, 400, { error: 'Give the account a name' }); accs[i] = { ...accs[i], label }; db.setSetting('accounts', accs); }
+        else db.setSetting(`label.${a.id}`, label || null);
+        a.name = displayName(a.kind, label || null); break;
+      }
+      case '/api/accounts/remove': {
+        const acc = extraAccounts().find(x => x.id === body.id); const a = adapters.find(x => x.id === body.id);
+        if (!acc || !a) return json(res, 400, { error: 'Only accounts you added can be removed' });
+        if (busy) return json(res, 409, { error: 'Wait for the current turn to finish' });
+        clearInterval(signInWatch.get(a.id)); signInWatch.delete(a.id);
+        // Sign out only if it's signed in (clears its saved login, e.g. from the macOS Keychain). The account's own folder is
+        // passed explicitly, so this can't affect your other accounts.
+        if (a.configDir && (await a.account({ fresh: true }))?.loggedIn) await a.signOut().catch(() => {});
+        await rm(join(accountsDir, acc.id), { recursive: true, force: true });
+        db.setSetting('accounts', extraAccounts().filter(x => x.id !== acc.id));
+        adapters.splice(adapters.indexOf(a), 1); router.removeAdapter(a.id);
+        db.raw.prepare('DELETE FROM priorities WHERE provider = ?').run(a.id); break;
+      }
+      case '/api/accounts/signin': {
+        const a = adapters.find(x => x.id === body.id && x.signIn);
+        if (!a) return json(res, 400, { error: demo ? 'Open a project folder to sign in (demo mode uses simulated AIs).' : 'Unknown account' });
+        const { cmd, args, env } = a.signIn;
+        const command = [...Object.entries(env).map(([k, v]) => `${k}=${shq(v)}`), cmd, ...args].join(' ');
+        let opened = false;
+        if (process.platform === 'darwin') {
+          // Open Terminal with the real sign-in command. The script holds no secrets: only which folder this account uses.
+          await mkdir(accountsDir, { recursive: true, mode: 0o700 });
+          const file = join(accountsDir, `sign-in-${a.id.replace(/[^\w-]/g, '_')}.command`);
+          await writeFile(file, ['#!/bin/zsh -l', ...Object.entries(env).map(([k, v]) => `export ${k}=${shq(v)}`),
+            `echo ${shq(`Signing in: ${a.name}`)}`, `echo`, [cmd, ...args].map(shq).join(' '),
+            `echo; echo 'Done. You can close this window and go back to Unify.js.'`].join('\n') + '\n', { mode: 0o700 });
+          opened = await new Promise(r => execFile('open', [file], e => r(!e)));
+        }
+        // Watch for the sign-in to finish, then refresh the app (up to 10 minutes).
+        clearInterval(signInWatch.get(a.id));
+        const started = Date.now();
+        signInWatch.set(a.id, setInterval(async () => {
+          const acc = await a.account?.({ fresh: true });
+          if (acc?.loggedIn || Date.now() - started > 10 * 60_000) { clearInterval(signInWatch.get(a.id)); signInWatch.delete(a.id); await pushSnapshot(); }
+        }, 3000));
+        return json(res, 200, { ok: true, opened, command });
+      }
+      case '/api/accounts/check': {
+        const a = adapters.find(x => x.id === body.id && x.account); if (a) { a.forgetAccount(); await a.account({ fresh: true }); } break;
+      }
       case '/api/demo/limit': if (!demo) return json(res, 400, { error: 'demo only' }); demo.limitNext(body.id ?? 'claude-code'); break;
       default: return json(res, 404, { error: 'not found' });
     }
@@ -157,7 +242,7 @@ const server = http.createServer(async (req, res) => {
 });
 await new Promise((res, rej) => { server.once('error', rej); server.listen(PORT, HOST, res); });
 const url = `http://${HOST}:${server.address().port}`;
-return { url, mode: MODE, cwd: CWD, async close() { pending?.resolve(false); for (const c of clients) c.end(); await new Promise(r => server.close(r)); db.close(); } };
+return { url, mode: MODE, cwd: CWD, async close() { pending?.resolve(false); for (const t of signInWatch.values()) clearInterval(t); for (const c of clients) c.end(); await new Promise(r => server.close(r)); db.close(); } };
 }
 
 if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]) {

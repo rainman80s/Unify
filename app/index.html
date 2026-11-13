@@ -87,6 +87,12 @@ button{cursor:pointer}
 .aicard .line b{color:var(--ink);font-weight:600}
 .aiactions{display:flex;gap:8px;flex-wrap:wrap;margin-top:12px}
 .aiactions button{width:auto}
+.addacct{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-top:10px}
+.addacct select,.addacct input{border:1px solid var(--line);background:var(--soft);color:var(--ink);border-radius:9px;padding:8px 10px;font-size:12px}
+.addacct input{flex:1;min-width:140px}
+.addacct button{width:auto}
+.aicard.off{opacity:.7}
+.aicard code.cmd{display:block;white-space:pre-wrap;word-break:break-all;background:var(--soft);border:1px solid var(--line);border-radius:8px;padding:8px;margin-top:6px;font-size:11px}
 .cat{margin-top:12px;border-top:1px solid var(--line);padding-top:12px}
 .cat input{width:100%;border:1px solid var(--line);background:var(--soft);border-radius:9px;padding:8px 10px;font-size:13px}
 .catlist{max-height:320px;overflow:auto;margin-top:8px;border:1px solid var(--line);border-radius:10px}
@@ -277,8 +283,8 @@ const post = (path, body = {}) => fetch(path, { method: 'POST', headers: { 'cont
 const nameOf = id => S?.statuses.find(s => s.id === id)?.name ?? id;
 const tagFor = p => p.billing === 'paid' ? el('span', 'tagpaid', 'PAID') : p.billing === 'trial' ? el('span', 'tagtrial', 'FREE TRIAL') : el('span', 'tagsub', 'SUBSCRIPTION');
 const isPaid = id => S?.statuses.find(s => s.id === id)?.billing === 'paid';
-const avClass = id => id === 'codex' ? 'av codex' : id === 'nvidia' ? 'av nv' : isPaid(id) ? 'av paid' : 'av';
-const avChar = id => id === 'codex' ? '◎' : id === 'nvidia' ? '◉' : isPaid(id) ? '◈' : '✳';
+const avClass = id => String(id).startsWith('codex') ? 'av codex' : id === 'nvidia' ? 'av nv' : isPaid(id) ? 'av paid' : 'av';
+const avChar = id => String(id).startsWith('codex') ? '◎' : id === 'nvidia' ? '◉' : isPaid(id) ? '◈' : '✳';
 const usd = n => n == null ? '?' : n < 0.01 ? `$${n.toFixed(4)}` : `$${n.toFixed(2)}`;
 const time = iso => new Date(iso).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
 
@@ -366,6 +372,8 @@ function renderRail() {
     pz.onclick = () => post(p.available ? '/api/pause' : '/api/resume', { id: p.id });
     btns.append(up, pz);
     if (p.needsKey && !p.available && p.reason === 'No API key added') { const k = el('button', 'sbtn', 'Add key'); k.onclick = () => openKey(p); btns.replaceChildren(up, k); }
+    if (p.needsSignIn) { const k = el('button', 'sbtn', 'Sign in'); k.onclick = () => signIn(p); btns.replaceChildren(up, k); }
+    if (p.off) { const k = el('button', 'sbtn', 'Turn on'); k.title = 'Use this AI in this project'; k.onclick = () => post('/api/project-ai', { id: p.id, on: true }); btns.replaceChildren(up, k); }
     row.append(btns); box.append(row);
   });
 
@@ -390,6 +398,14 @@ function renderRail() {
   $('#handoffnow').disabled = !st.lastProvider || S.busy;
 }
 
+let renaming = null; const signinMsg = {};
+async function signIn(p) {
+  const r = await post('/api/accounts/signin', { id: p.id });
+  signinMsg[p.id] = r.error ? { text: r.error }
+    : r.opened ? { text: 'Terminal opened with the sign-in. Finish it there (a browser window may open too); this page updates by itself when you\'re signed in.' }
+    : { text: 'Run this in a terminal to sign in; this page updates by itself when you\'re done:', command: r.command };
+  view = 'ais'; render();
+}
 let view = 'chat', catalog = { provider: null, models: null, error: null, q: '', loading: false };
 document.querySelectorAll('[data-view]').forEach(b => b.onclick = () => { view = b.dataset.view; $('#app').classList.remove('railopen'); render(); $('#scroll').scrollTop = 0; });
 
@@ -406,12 +422,24 @@ function renderAIs() {
   const page = el('div', 'aipage');
   page.append(el('h1', null, 'My AIs'), el('p', null, 'Unify.js uses these in the order on the right. Subscription AIs go first, then free trials. Paid APIs only run after you approve them.'));
   for (const p of S.statuses) {
-    const card = el('div', 'aicard');
-    const head = el('div', 'aihead'); head.append(el('div', avClass(p.id), avChar(p.id)), el('h3', null, p.name), tagFor(p));
+    const card = el('div', 'aicard' + (p.off ? ' off' : ''));
+    const head = el('div', 'aihead');
+    head.append(el('div', avClass(p.id), avChar(p.id)));
+    if (renaming === p.id) {
+      const f = el('form', 'addacct'); f.style.flex = '1'; f.style.marginTop = '0';
+      const inp = el('input'); inp.id = 'renamein'; inp.value = p.label ?? ''; inp.placeholder = p.extra ? 'Name, e.g. Work' : 'Name, e.g. Personal (optional)';
+      const ok = el('button', 'sbtn', 'Save'); const no = el('button', 'sbtn', 'Cancel'); no.type = 'button';
+      no.onclick = () => { renaming = null; render(); };
+      f.onsubmit = async e => { e.preventDefault(); const r = await post('/api/accounts/rename', { id: p.id, label: inp.value }); if (!r.error) { renaming = null; render(); } };
+      f.append(inp, ok, no); head.append(f);
+    } else head.append(el('h3', null, p.name));
+    head.append(tagFor(p));
     card.append(head);
     const line = (...parts) => { const d = el('div', 'line'); d.append(...parts); card.append(d); return d; };
     line(p.available ? '● Ready' : `○ ${p.until ? 'Resting after a limit' : p.reason}`);
-    if (p.billing === 'subscription') line(`Runs your own signed-in ${p.id === 'codex' ? 'codex' : 'claude'} command-line tool on this computer, using your plan. Unify.js never sees your login.`);
+    if (p.account?.loggedIn) line('Signed in', p.account.email ? ' as ' : '', ...(p.account.email ? [el('b', null, p.account.email)] : []), p.account.plan ? ` · ${p.account.plan[0].toUpperCase()}${p.account.plan.slice(1)} plan` : '');
+    if (p.billing === 'subscription') line(`Runs your own signed-in ${p.kind === 'codex' ? 'codex' : 'claude'} command-line tool on this computer, using your plan. Unify.js never sees your login.${p.extra ? ' This account has its own sign-in, separate from your other ones.' : ''}`);
+    if (signinMsg[p.id]) { const d = line(signinMsg[p.id].text); if (signinMsg[p.id].command) d.append(el('code', 'cmd', signinMsg[p.id].command)); }
     if (p.model) line('Model: ', el('b', null, p.model));
     if (p.pricePerMTok) line(`Estimated price: $${p.pricePerMTok.input} / $${p.pricePerMTok.output} per million input / output tokens. Verify current pricing.`);
     if (p.billing === 'paid') line('Spent on this project: ', el('b', null, usd(p.spend?.usd ?? 0)), p.capUsd ? ` of a ${usd(p.capUsd)} cap` : ' · asks before each new budget');
@@ -420,6 +448,15 @@ function renderAIs() {
     if (p.needsKey) line('API key: ', el('b', null, p.keySource === 'demo' ? 'simulated (demo)' : p.keySource ? `added (${p.keySource})` : 'not added'));
     const acts = el('div', 'aiactions');
     if (p.needsKey && !p.keySource) { const b = el('button', 'primary', 'Add API key'); b.onclick = () => openKey(p); acts.append(b); }
+    if (p.kind && S.mode !== 'demo') {
+      const b = el('button', p.needsSignIn ? 'primary' : 'ghost', p.needsSignIn ? 'Sign in' : p.account?.loggedIn ? 'Switch account…' : 'Sign in');
+      b.onclick = () => signIn(p); acts.append(b);
+      const rn = el('button', 'ghost', 'Rename'); rn.onclick = () => { renaming = p.id; render(); $('#renamein')?.focus(); }; acts.append(rn);
+      if (p.extra) { const rm = el('button', 'ghost', 'Remove account'); rm.onclick = () => {
+        if (confirm(`Remove ${p.name}? This signs it out on this computer and deletes its separate settings folder. Your other accounts aren't affected.`)) post('/api/accounts/remove', { id: p.id }); }; acts.append(rm); }
+    }
+    { const b = el('button', 'ghost', p.off ? 'Use in this project' : 'Don\'t use in this project'); b.title = 'Only affects the project that is open now';
+      b.onclick = () => post('/api/project-ai', { id: p.id, on: !!p.off }); acts.append(b); }
     if (p.keySource === 'secure storage') { const b = el('button', 'ghost', 'Remove key'); b.onclick = () => post('/api/keys', { provider: p.id, remove: true }); acts.append(b); }
     if (p.hasCatalog && p.keySource) {
       const b = el('button', 'ghost', catalog.provider === p.id && catalog.models ? 'Refresh catalog' : 'Browse model catalog');
@@ -448,7 +485,23 @@ function renderAIs() {
     }
     page.append(card);
   }
+  if (S.mode !== 'demo') {
+    const card = el('div', 'aicard');
+    card.append(el('h3', null, 'Add another account'));
+    const d = el('div', 'line', 'For example a work Claude Code next to your personal one. Each account signs in separately, and you can switch accounts off per project so work code only goes to your work account.');
+    const f = el('form', 'addacct');
+    const sel = el('select'); sel.ariaLabel = 'Which AI';
+    for (const [v, t] of [['claude-code', 'Claude Code'], ['codex', 'Codex']]) { const o = el('option', null, t); o.value = v; sel.append(o); }
+    const inp = el('input'); inp.id = 'acctname'; inp.placeholder = 'Name, e.g. Work'; inp.maxLength = 40;
+    const b = el('button', 'primary', 'Add account');
+    const err = el('div', 'line');
+    f.onsubmit = async e => { e.preventDefault(); if (!inp.value.trim()) return inp.focus();
+      const r = await post('/api/accounts/add', { kind: sel.value, label: inp.value });
+      if (r.error) err.textContent = r.error; else signIn({ id: r.id }); };
+    f.append(sel, inp, b); card.append(d, f, err); page.append(card);
+  } else page.append(el('p', null, 'To add a second Claude Code or Codex account (like Work), open a project folder first: File → Open Project Folder…'));
   t.append(page);
+  if (focused === 'renamein' || focused === 'acctname') $('#' + focused)?.focus();
   if (focused === 'catq') { const q = $('#catq'); q?.focus(); q?.setSelectionRange(q.value.length, q.value.length); }
 }
 
