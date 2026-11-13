@@ -14,10 +14,11 @@ import { createSecretStore } from './secrets.js';
 import { demoAdapters } from './demo-adapters.js';
 import { refreshPath, installCommand, INSTALL_HELP, openInTerminal, cliVersion, testReply, shq } from './setup.js';
 import { readFileSync, writeFileSync } from 'node:fs';
+import { updateChecker } from './updates.js';
 
 const here = dirname(fileURLToPath(import.meta.url));
 
-export async function startServer({ mode = 'demo', port = 4317, host = '127.0.0.1', cwd = process.cwd(), dataDir = join(here, '..', '.unify-data'), Database, secrets = null } = {}) {
+export async function startServer({ mode = 'demo', port = 4317, host = '127.0.0.1', cwd = process.cwd(), dataDir = join(here, '..', '.unify-data'), Database, secrets = null, appVersion = null, checkUpdates = updateChecker({ currentVersion: appVersion }) } = {}) {
 const MODE = mode === 'real' ? 'real' : 'demo';
 const PORT = port, HOST = host;
 let CWD = cwd;
@@ -111,11 +112,16 @@ async function snapshot() {
       chatOnly: !!a.chatOnly, model: a.model, note: a.note ?? null, pricePerMTok: a.pricePerMTok ?? null, hasCatalog: typeof a.listModels === 'function' });
   }
   const approval = pending && (({ resolve, ...p }) => p)(pending);
-  return { mode: MODE, busy, approval, setupDone: setupDone(), project: db.getProject(PROJECT), state, statuses, packet,
+  return { mode: MODE, busy, approval, setupDone: setupDone(), appVersion, update, project: db.getProject(PROJECT), state, statuses, packet,
     preview: renderHandoffPacket(state, { from: from ?? 'the previous model', to: next?.name ?? 'the next model' }),
     events: db.events(PROJECT) };
 }
 const pushSnapshot = async () => broadcast({ kind: 'snapshot', ...(await snapshot()) });
+// Update check in the background, so a slow network never delays the app.
+let update = null;
+const refreshUpdate = async () => { const u = await checkUpdates().catch(() => null); if (JSON.stringify(u) !== JSON.stringify(update)) { update = u; await pushSnapshot(); } };
+const updateTimer = appVersion ? setInterval(refreshUpdate, 6 * 3600_000) : null; updateTimer?.unref?.();
+if (appVersion) refreshUpdate();
 
 const readBody = req => new Promise((res, rej) => {
   let b = ''; req.on('data', d => { b += d; if (b.length > 1e6) req.destroy(); });
@@ -266,7 +272,7 @@ const server = http.createServer(async (req, res) => {
 });
 await new Promise((res, rej) => { server.once('error', rej); server.listen(PORT, HOST, res); });
 const url = `http://${HOST}:${server.address().port}`;
-return { url, mode: MODE, cwd: CWD, async close() { pending?.resolve(false); for (const t of signInWatch.values()) clearInterval(t); for (const c of clients) c.end(); await new Promise(r => server.close(r)); db.close(); } };
+return { url, mode: MODE, cwd: CWD, async close() { pending?.resolve(false); for (const t of signInWatch.values()) clearInterval(t); clearInterval(updateTimer); for (const c of clients) c.end(); await new Promise(r => server.close(r)); db.close(); } };
 }
 
 if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]) {

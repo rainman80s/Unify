@@ -92,6 +92,7 @@ button{cursor:pointer}
 .addacct input{flex:1;min-width:140px}
 .addacct button{width:auto}
 .aicard.off{opacity:.7}
+.updlink{display:inline-block;margin-top:6px;color:var(--accent-ink);font-weight:600;text-decoration:none}
 .step{display:grid;grid-template-columns:22px 1fr auto;gap:10px;align-items:center;padding:10px 0;border-top:1px solid var(--line);font-size:12.5px}
 .step:first-of-type{border-top:0}
 .step .ok{color:var(--ok);font-weight:700}.step .todo{color:var(--muted)}
@@ -580,6 +581,7 @@ function renderAIs() {
 function render() {
   $('#projname').textContent = S.project.name; $('#crumb').textContent = S.project.name;
   $('#modefoot').textContent = S.mode === 'demo' ? 'Demo mode · simulated AIs' : `Live · ${S.project.cwd}`;
+  if (S.update) { const u = el('a', 'updlink', `⬆ Update available: v${S.update.version}`); u.href = S.update.url; u.target = '_blank'; u.title = `You have v${S.appVersion}. Opens the download page.`; $('#modefoot').append(el('br'), u); }
   $('#demobox').hidden = S.mode !== 'demo';
   $('#hint').textContent = S.mode === 'demo' ? 'Demo · replies are simulated. Context is saved after every step.' : 'Context is saved after every step, so a handoff never depends on the AI that ran out.';
   $('#send').disabled = S.busy;

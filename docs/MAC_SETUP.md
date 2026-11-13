@@ -1,7 +1,7 @@
 # Running Unify.js on your Mac
 
 ## Easiest: install the app
-1. Download the .dmg: `Unify.js-<version>-arm64.dmg` for Apple Silicon (M1 or newer), `Unify.js-<version>.dmg` for Intel Macs.
+1. Download the .dmg from https://github.com/rainman80s/Unify/releases/latest: `Unify.js-<version>-arm64.dmg` for Apple Silicon (M1 or newer), `Unify.js-<version>.dmg` for Intel Macs.
    (To build them yourself: `cd desktop && npm install && npm run dist:mac`; they land in `desktop/dist/`.)
 2. Open it and drag **Unify.js** into **Applications**.
 3. The first time, macOS blocks it because it isn't signed with an Apple Developer ID yet. Double-click it once, choose
@@ -9,6 +9,8 @@
    You only do this once.
 4. The **Get started** screen checks for Claude Code and Codex, installs them if needed (in Terminal, with their official
    installers), opens each sign-in, and sends a tiny test message. Then pick a project folder.
+
+When a new version is out, the app shows **Update available** at the bottom of the sidebar; download it the same way and replace the app in Applications.
 
 The rest of this page is for running from source (developers, or to try unreleased changes).
 
@@ -27,10 +29,9 @@ If Node is missing or older, install it from https://nodejs.org (the LTS install
 cd ~
 git clone https://github.com/rainman80s/unify.git
 cd unify
-git checkout claude/cool-rubin-fsoivw
 npm test            # should end with "fail 0"
 ```
-The repo is private. If git asks you to sign in, use GitHub Desktop or `gh auth login` (GitHub CLI).
+If git asks you to sign in, use GitHub Desktop or `gh auth login` (GitHub CLI).
 
 ## 3. Sign in to the AI tools (your own accounts)
 ```sh

@@ -39,6 +39,7 @@ async function boot() {
   if (server) await server.close();
   server = await startServer({
     mode: folder ? 'real' : 'demo', cwd: folder ?? app.getPath('home'), port: 0,
+    appVersion: app.getVersion(), // enables the "new version available" check against GitHub Releases
     dataDir: join(app.getPath('userData'), 'data'), Database,
     // API keys are encrypted with the OS keychain (safeStorage). If that's unavailable, keys can only come from env vars.
     secrets: safeStorage.isEncryptionAvailable()

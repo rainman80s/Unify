@@ -10,7 +10,8 @@
     "start": "electron .",
     "dist:mac": "npm run bundle && electron-builder --mac",
     "bundle": "node bundle.mjs",
-    "dist:dir": "npm run bundle && electron-builder --dir"
+    "dist:dir": "npm run bundle && electron-builder --dir",
+    "release": "node release.mjs"
   },
   "dependencies": {
     "better-sqlite3": "12.2.0"
