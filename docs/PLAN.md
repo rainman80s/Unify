@@ -75,13 +75,32 @@ gets its own worktree, results are merged by PR-like review, and consequential a
 6. **M5, Mac app.** Electron packaging, liquid-glass styling from the prototype, signing/notarization.
 7. **Later.** Image generation adapters, a parallel agents/compare mode, cloud sync, and native OpenAI "use your plan" if eligible.
 
+After the MVP (decided Nov 13, 2026; see section 7):
+
+8. **M6, multiple accounts per AI.** "Claude Code (Personal)" and "Claude Code (Work)" as separate providers, each with its own CLI config folder (`CLAUDE_CONFIG_DIR`; `CODEX_HOME` for Codex), signed in from the app, plus a default account per project. Verify both variables against the installed CLI versions first.
+9. **M7, easy install.** A downloadable .dmg with first-run setup: detect or install `claude`/`codex` with their official installers, open each sign-in, and run the doctor checks with green ticks. Unsigned for now, so the first launch is right-click → Open and updates are an in-app "new version available" link (macOS auto-update needs signing). Add signing and notarization when there's an Apple Developer account; nothing else changes.
+10. **M8, phone as a remote.** A home-screen web app first (native later) that connects to your home base (section 7) through QR pairing over a secure link or Tailscale. The local server currently accepts only connections from the same machine, so this needs pairing and per-device sign-in. With every Mac off, the phone can still chat through API providers but not the coding agents.
+11. **M9, accounts and sync.** Unify accounts, end-to-end encrypted sync of the event log, projects, settings and priorities, and snapshot refs pushed to the project's git remote so another runner can continue. CLI sign-ins never sync; API keys sync only end-to-end encrypted.
+
 ## 6. Decisions
 
 Decided (Nov 13, 2026): the name is **Unify.js** (a trademark check is still needed before public launch). First providers: **Claude Code, then Codex**.
-Built so far: M0 engine; M1 chat app with Claude Code and Codex adapters (verified on macOS: both connect and resume, and a real Claude Code → Codex handoff passed); M2 git snapshot after every turn; M4 NVIDIA catalog with model picker (free trial, rate-limited) and DeepSeek with approval, spending caps, and encrypted keys (tested against a local mock API, not the real one); M5 Electron shell (runs and packages on Linux; Mac build, signing, and notarization not done yet).
+Built so far: M0 engine; M1 chat app with Claude Code and Codex adapters (verified on macOS: both connect and resume, and a real Claude Code → Codex handoff passed); M2 git snapshot after every turn; M4 NVIDIA catalog with model picker (free trial, rate-limited) and DeepSeek with approval, spending caps, and encrypted keys (tested against a local mock API, not the real one); M5 Electron shell (runs on macOS; `npm install` works on Node 26; not yet packaged as a .dmg or signed). NVIDIA verified live on macOS with Mistral Large 4 (`mistralai/mistral-large-4-1t-a52b`; the old Llama 3.3 default was retired).
+
+Decided (Nov 13, 2026): no Apple Developer account yet (ship unsigned); the phone only needs to work while a runner is on (an always-on home base); sync starts single-user but is designed for friends and family with their own accounts and integrations (section 7). Next up: M6, multiple accounts per AI.
 
 Still open:
 
 - Confirm "drive official CLIs locally" as the core subscription strategy.
 - Electron vs. Tauri: recommend Electron.
 - Development setup: M1 needs a Mac (or any machine) with the CLIs installed. This cloud session can build the engine and UI and test them with fake adapters, but it can't sign into Ranen's accounts.
+
+## 7. Devices, accounts, and other people
+
+- **Home base.** Ranen has an always-on computer that runs Unify, holds the projects, and is signed in to the CLIs. Phones and laptops are clients; any signed-in machine that is online can be a runner, and the default runner for a project is the home base. The phone only needs to work while some runner is on.
+- **No cloud runners for subscriptions.** Running people's Claude/ChatGPT subscription CLIs on a hosted server is likely against the providers' terms and costs money, so it is out of scope.
+- **Built for friends and family from the start**, though it starts with one user:
+  - Everyone brings their own AI accounts, keys and computers. A runner never runs someone else's work on its owner's subscriptions (privacy, and providers forbid account sharing).
+  - Each person has their own Unify account; projects and history are encrypted on their devices, so the sync server (and whoever operates it) cannot read them.
+  - Integrations (which AIs, priority order, keys) are per person.
+  - Later: inviting someone to a single project. Leave room for it in the data model, but don't build it first.
