@@ -54,3 +54,22 @@ test('settings persist in the project database', () => {
   db.setSetting('nvidia.model', 'qwen/qwq-32b'); db.setSetting('nvidia.model', 'meta/llama-3.1-8b-instruct');
   assert.equal(db.getSetting('nvidia.model'), 'meta/llama-3.1-8b-instruct');
 });
+
+test('NVIDIA: a retired model (HTTP 410) gives a clear "choose another model" error, not a limit', async () => {
+  const api = await mockApi((r, res) => { res.writeHead(410); res.end('{"title":"Gone","detail":"The model has reached its end of life"}'); });
+  const nv = nvidiaAdapter({ getKey: async () => 'nvapi-test', getModel: () => 'old/model', fetchImpl: via(api) });
+  const evs = []; for await (const e of nv.run({ prompt: 'hi' })) evs.push(e);
+  const err = evs.find(e => e.type === 'error');
+  assert.ok(err, 'expected an error event');
+  assert.match(err.message, /'old\/model' is not available.*My AIs/);
+  assert.equal(evs.some(e => e.type === 'limit'), false);
+  await api.close();
+});
+
+test('pasted keys are cleaned up: whitespace, quotes, and a leading "Bearer "', async () => {
+  const { normalizeKey } = await import('../src/adapters/openai-compatible.js');
+  for (const k of [' nvapi-abc \n', '"nvapi-abc"', 'Bearer nvapi-abc', '"Bearer nvapi-abc"\r\n']) assert.equal(normalizeKey(k), 'nvapi-abc');
+  assert.equal(normalizeKey('   '), null);
+  const sample = `import axios from 'axios';\nconst headers = {\n  "Authorization": "Bearer nvapi-AbC_123-xyz_456789012345678",\n};`;
+  assert.equal(normalizeKey(sample), 'nvapi-AbC_123-xyz_456789012345678');
+});

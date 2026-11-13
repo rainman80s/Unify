@@ -1,5 +1,5 @@
 // Unify.js doctor: checks every real connection with tiny requests and writes a shareable report.
-//   npm run doctor                 Claude Code + Codex (+ NVIDIA if NVIDIA_API_KEY is set). Free / uses your plans lightly.
+//   npm run doctor                 Claude Code + Codex (+ NVIDIA if NVIDIA_API_KEY is set; NVIDIA_MODEL picks the model). Free / uses your plans lightly.
 //   npm run doctor -- --handoff    also a real Claude Code -> Codex handoff in a throwaway git repo
 //   npm run doctor -- --paid       also one tiny DeepSeek request (needs DEEPSEEK_API_KEY; capped at $0.01)
 // Everything runs in temporary folders. API keys are read from env vars and never written to the report.
@@ -11,6 +11,7 @@ import { fileURLToPath } from 'node:url';
 import {
   openDb, createRouter, claudeCodeAdapter, codexAdapter, nvidiaAdapter, deepseekAdapter, gitCheckpointer,
 } from '../engine/src/index.js';
+import { normalizeKey } from '../engine/src/adapters/openai-compatible.js';
 
 const args = new Set(process.argv.slice(2));
 const root = join(dirname(fileURLToPath(import.meta.url)), '..');
@@ -62,11 +63,25 @@ async function checkAgent(label, adapter) {
 
 async function checkApi(label, adapter, envName, { maxCostUsd } = {}) {
   if (!process.env[envName]) return report(`${label}`, 'skip', `set ${envName} to test`);
-  if (adapter.listModels) {
-    try { const ms = await adapter.listModels(); report(`${label}: model catalog`, 'ok', `${ms.length} models`); }
-    catch (e) { return report(`${label}: model catalog`, 'bad', e.message); }
+  if (label === 'NVIDIA') { // describe the key's shape (never its contents) so a bad paste is easy to spot
+    const raw = process.env[envName], k = normalizeKey(raw);
+    const shape = `starts with nvapi-: ${k?.startsWith('nvapi-') ? 'yes' : 'NO'} · ${k?.length ?? 0} characters${raw !== k ? ' · took the key out of the pasted text' : ''}${k && !k.startsWith('nvapi-') ? ' · the "nvapi-" at the start seems to be missing; copy the whole key' : ''}`;
+    report(`${label}: key format`, k?.startsWith('nvapi-') && k.length >= 60 ? 'ok' : 'bad', shape);
   }
-  const r = await collect(adapter, { prompt: PROMPT1, maxCostUsd }, 60_000);
+  if (adapter.listModels) {
+    let ms;
+    try { ms = await adapter.listModels(); report(`${label}: model catalog`, 'ok', `${ms.length} models (the list is public; the reply check below tests your key)`); }
+    catch (e) { return report(`${label}: model catalog`, 'bad', e.message); }
+    const ids = ms.map(m => m.id);
+    writeFileSync(join(outDir, `${label.toLowerCase()}-models.txt`), ids.join('\n') + '\n'); // model names only, no keys
+    if (!ids.includes(adapter.model)) {
+      const words = adapter.model.toLowerCase().split(/[/\-_.]+/).filter(w => w.length > 2);
+      const close = ids.filter(id => words.some(w => id.toLowerCase().includes(w))).slice(0, 8);
+      return report(`${label}: model '${adapter.model}' in your catalog`, 'bad',
+        `not listed. Set ${label.toUpperCase()}_MODEL to one that is${close.length ? `, e.g. ${close.join(', ')}` : ''}. Full list: ${label.toLowerCase()}-models.txt`);
+    }
+  }
+  const r = await collect(adapter, { prompt: PROMPT1, maxCostUsd }, 180_000); // free-tier queues can take ~1 min
   if (r.fail || !/UNIFY_OK/.test(r.text)) return report(`${label}: replies (${adapter.model})`, 'bad', r.fail?.message ?? r.fail?.reason ?? `reply: ${JSON.stringify(r.text.slice(0, 120))}`);
   const u = r.evs.find(e => e.type === 'usage');
   report(`${label}: replies (${adapter.model})`, 'ok', `${r.secs}s${u ? ` · ${u.inputTokens + u.outputTokens} tokens${u.cost != null ? ` · ~$${u.cost.toFixed(6)}` : ''}` : ''}`);
@@ -97,7 +112,7 @@ report('Node.js', maj > 22 || (maj === 22 && min >= 13) ? 'ok' : 'bad', `v${proc
 report('git', sh('git', ['--version']) ? 'ok' : 'bad', sh('git', ['--version']) ?? 'not installed');
 const claudeOk = await checkAgent('Claude Code', claudeCodeAdapter());
 const codexOk = await checkAgent('Codex', codexAdapter());
-await checkApi('NVIDIA', nvidiaAdapter({ getKey: async () => process.env.NVIDIA_API_KEY ?? null }), 'NVIDIA_API_KEY');
+await checkApi('NVIDIA', nvidiaAdapter({ getKey: async () => process.env.NVIDIA_API_KEY ?? null, getModel: () => process.env.NVIDIA_MODEL || null }), 'NVIDIA_API_KEY');
 if (args.has('--paid')) await checkApi('DeepSeek', deepseekAdapter({ getKey: async () => process.env.DEEPSEEK_API_KEY ?? null }), 'DEEPSEEK_API_KEY', { maxCostUsd: 0.01 });
 else report('DeepSeek', 'skip', 'paid: run with --paid (and DEEPSEEK_API_KEY) to test; costs well under $0.01');
 if (args.has('--handoff')) { if (claudeOk && codexOk) await checkHandoff(); else report('Handoff', 'skip', 'needs both Claude Code and Codex working'); }

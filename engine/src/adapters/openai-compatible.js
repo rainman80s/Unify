@@ -23,6 +23,15 @@ export async function* sseJson(body) {
   }
 }
 
+/** Clean up a pasted key: stray whitespace, quotes, a leading "Bearer ", or a whole sample program with the key inside. */
+export function normalizeKey(key) {
+  if (typeof key !== 'string') return key ?? null;
+  const embedded = key.match(/\bnvapi-[A-Za-z0-9_-]{20,}/); // NVIDIA's "Copy" button copies sample code, not just the key
+  if (embedded) return embedded[0];
+  const k = key.trim().replace(/^["']|["']$/g, '').trim().replace(/^Bearer\s+/i, '').trim();
+  return k || null;
+}
+
 /**
  * id, name, baseUrl, model: provider details.
  * getKey(): reads the key from secure storage at call time. The key is never written to events or logs.
@@ -31,21 +40,22 @@ export async function* sseJson(body) {
 export function openAICompatibleAdapter({ id, name, baseUrl, model, getModel = null, getKey, pricePerMTok = null, billing = 'paid',
   rateLimitPauseMs = null, note = null, fetchImpl = globalThis.fetch }) {
   const currentModel = () => (getModel && getModel()) || model;
+  const readKey = async () => normalizeKey(await getKey());
   const histories = new Map(); // sessionId -> messages (in memory; the project log is the durable record)
   return {
     id, name, billing, chatOnly: true, needsKey: true, note, pricePerMTok,
     get model() { return currentModel(); },
     /** List models the key can use (OpenAI-compatible GET /models). */
     async listModels() {
-      const key = await getKey(); if (!key) throw new Error(`${name}: no API key`);
+      const key = await readKey(); if (!key) throw new Error(`${name}: no API key`);
       const r = await fetchImpl(`${baseUrl.replace(/\/$/, '')}/models`, { headers: { authorization: `Bearer ${key}` } });
       if (!r.ok) throw new Error(r.status === 401 ? `${name}: the API key was rejected` : `${name}: HTTP ${r.status}`);
       const j = await r.json();
       return (j.data ?? []).map(m => ({ id: m.id, owner: m.owned_by ?? m.id.split('/')[0] })).sort((a, b) => a.id.localeCompare(b.id));
     },
-    async status() { return (await getKey()) ? { available: true } : { available: false, reason: 'No API key added' }; },
+    async status() { return (await readKey()) ? { available: true } : { available: false, reason: 'No API key added' }; },
     async *run({ prompt, signal, sessionId, maxCostUsd = Infinity }) {
-      const key = await getKey();
+      const key = await readKey();
       if (!key) { yield { type: 'error', message: `${name}: no API key` }; return; }
       const sid = sessionId && histories.has(sessionId) ? sessionId : randomUUID();
       const messages = histories.get(sid) ?? [{ role: 'system', content: SYSTEM }];
@@ -76,7 +86,9 @@ export function openAICompatibleAdapter({ id, name, baseUrl, model, getModel = n
         if (res.status === 429 || res.status === 402 || looksLikeLimit(text))
           yield { type: 'limit', reason: res.status === 402 ? `${name}: out of credit` : `${name}: rate limited (${res.status})`,
             ...(res.status === 429 && rateLimitPauseMs ? { retryAt: Date.now() + rateLimitPauseMs } : {}) };
-        else yield { type: 'error', message: res.status === 401 ? `${name}: the API key was rejected` : `${name}: HTTP ${res.status} ${text}` };
+        else if (res.status === 404 || res.status === 410)
+          yield { type: 'error', message: `${name}: the model '${currentModel()}' is not available (retired, renamed, or not on your account). Choose another model in My AIs.`, detail: text };
+        else yield { type: 'error', message: res.status === 401 ? `${name}: the API key was rejected (check that you copied the whole key and that it hasn't been replaced by a newer one)${text ? `. ${name} said: ${text.slice(0, 200)}` : ''}` : `${name}: HTTP ${res.status} ${text}` };
         return;
       }
       let reply = '';
@@ -105,7 +117,7 @@ export const deepseekAdapter = ({ getKey, fetchImpl, model = 'deepseek-chat' } =
 // NVIDIA API catalog (build.nvidia.com). OpenAI-compatible. Free trial access is rate-limited (reported ~40 requests/min
 // per model) and meant for prototyping, not production; terms and limits change, so it's labelled as a trial, never "unlimited".
 // A 429 here usually clears within a minute, so it only pauses briefly instead of the long default cooldown.
-export const nvidiaAdapter = ({ getKey, getModel, fetchImpl, model = 'meta/llama-3.3-70b-instruct' } = {}) => openAICompatibleAdapter({
+export const nvidiaAdapter = ({ getKey, getModel, fetchImpl, model = 'mistralai/mistral-large-4-1t-a52b' } = {}) => openAICompatibleAdapter({
   id: 'nvidia', name: 'NVIDIA', baseUrl: 'https://integrate.api.nvidia.com/v1', model, getModel, getKey, fetchImpl,
   billing: 'trial', rateLimitPauseMs: 60_000,
   note: 'Free trial access: rate-limited and for prototyping, not production. Check NVIDIA\'s current terms for each model.',

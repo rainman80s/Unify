@@ -59,9 +59,9 @@ export function demoAdapters({ cwd, getModel = () => () => null }) {
   const nvModel = getModel('nvidia');
   Object.assign(nvidia, { billing: 'trial', chatOnly: true, needsKey: true,
     note: 'Simulated. Real NVIDIA trial access is rate-limited and for prototyping, not production.' });
-  Object.defineProperty(nvidia, 'model', { get: () => nvModel() || 'meta/llama-3.3-70b-instruct' });
+  Object.defineProperty(nvidia, 'model', { get: () => nvModel() || 'mistralai/mistral-large-4-1t-a52b' });
   // A small, illustrative sample of what the catalog lists. The real list comes from NVIDIA's /v1/models with your key.
-  nvidia.listModels = async () => ['deepseek-ai/deepseek-r1', 'google/gemma-3-27b-it', 'meta/llama-3.1-8b-instruct', 'meta/llama-3.3-70b-instruct',
+  nvidia.listModels = async () => ['deepseek-ai/deepseek-r1', 'google/gemma-3-27b-it', 'meta/llama-3.1-8b-instruct', 'mistralai/mistral-large-4-1t-a52b',
     'microsoft/phi-4-mini-instruct', 'mistralai/mistral-small-24b-instruct', 'nvidia/llama-3.3-nemotron-super-49b-v1', 'qwen/qwen2.5-coder-32b-instruct',
     'qwen/qwq-32b'].map(id => ({ id, owner: id.split('/')[0] }));
   const nvRun = nvidia.run;
