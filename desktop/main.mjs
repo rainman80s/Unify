@@ -96,6 +96,8 @@ ipcMain.handle('unify:use-demo', () => useDemo());
 
 app.whenReady().then(async () => {
   adoptLoginShellPath();
+  // Packaged builds get the icon from build/icon.png; when running from source, set the Dock icon here.
+  if (isMac && !app.isPackaged) { try { app.dock.setIcon(join(here, 'build/icon.png')); } catch { /* keep the default */ } }
   createWindow(); buildMenu();
   try { await boot(); }
   catch (e) { dialog.showErrorBox('Unify.js could not start', String(e?.stack ?? e)); app.quit(); }
