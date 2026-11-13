@@ -75,10 +75,13 @@ gets its own worktree, results are merged by PR-like review, and consequential a
 6. **M5, Mac app.** Electron packaging, liquid-glass styling from the prototype, signing/notarization.
 7. **Later.** Image generation adapters, a parallel agents/compare mode, cloud sync, and native OpenAI "use your plan" if eligible.
 
-## 6. Decisions needed from Ranen
+## 6. Decisions
+
+Decided (Nov 13, 2026): the name is **Unify.js** (a trademark check is still needed before public launch). First providers: **Claude Code, then Codex**.
+M0 engine is built in `engine/`.
+
+Still open:
 
 - Confirm "drive official CLIs locally" as the core subscription strategy.
-- First two providers: recommend **Claude Code + Codex**, since they match the stated priority order.
 - Electron vs. Tauri: recommend Electron.
-- Name: "Unify" collides with existing AI products. Pick a working codename for the repo and do a trademark search before branding.
 - Development setup: M1 needs a Mac (or any machine) with the CLIs installed. This cloud session can build the engine and UI and test them with fake adapters, but it can't sign into Ranen's accounts.

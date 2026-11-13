@@ -1,0 +1,12 @@
+{
+  "name": "unify.js",
+  "version": "0.1.0",
+  "private": true,
+  "description": "One workspace for many AIs, with a context engine that keeps work moving across providers.",
+  "type": "module",
+  "engines": { "node": ">=22.13" },
+  "scripts": {
+    "test": "node --test engine/test/*.test.js",
+    "demo": "node engine/demo.js"
+  }
+}
